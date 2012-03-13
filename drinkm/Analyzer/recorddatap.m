@@ -148,7 +148,7 @@ cuedata=[];
 %%
 
 
-    [retval, presets] = calllib(libname, 'loadXMLPresetFile','C:\Program Files\BIOPAC Systems, Inc\BIOPAC Hardware API 2.0\PresetFiles\channelpresets2.xml'); 
+    [retval, presets] = calllib(libname, 'loadXMLPresetFile','PresetFiles\channelpresets2.xml'); 
       if ~strcmp(retval,'MPSUCCESS')
         fprintf(1,'Failed to Load Presets.\n');
         calllib(libname, 'disconnectMPDev');
