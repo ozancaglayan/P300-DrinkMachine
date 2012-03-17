@@ -18,7 +18,7 @@ doth = 'mpdev.h';
 
 %parameter error checking
 if nargin < 5
-    error('Not enough arguements. MPDEVDEMO requires 5 arguments');
+    error('Not enough arguments. MPDEVDEMO requires 5 arguments');
 end
 
 if isnumeric(dll) || isnumeric(dothdir)

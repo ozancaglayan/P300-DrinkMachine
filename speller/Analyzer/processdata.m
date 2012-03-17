@@ -1,5 +1,3 @@
-
-
 function[result]= processdata(eeg,stims,cues,times)
 
 

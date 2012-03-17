@@ -7,7 +7,7 @@ function retval = recorddata(dll, dothdir, mptype, mpmethod, sn)
 % Usage:
 %   retval      return value for diagnostic purposes
 %   dll         fullpath to mpdev.dll (ie C:\mpdev.dll)
-%   dothdir     directory where mdpev.h 
+%   dothdir     directory where mpdev.h 
 %   mptype      enumerated value for MP device, refer to the documentation
 %   mpmethod    enumerated value for MP communication method, refer to the
 %   documentation
@@ -18,7 +18,7 @@ doth = 'mpdev.h';
 
 %parameter error checking
 if nargin < 5
-    error('Not enough arguements. MPDEVDEMO requires 5 arguemnets');
+    error('Not enough arguments. MPDEVDEMO requires 5 argumenets');
 end
 
 if isnumeric(dll) || isnumeric(dothdir)
