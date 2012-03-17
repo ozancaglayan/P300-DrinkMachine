@@ -1,426 +1,314 @@
-
-
 function retval = recorddatap(dll, dothdir, mptype, mpmethod, sn)
-% MPDEVDEMO BIOPAC Hardware API Demonstration for MATLAB
-% This function will illustrate how to use the BIOPAC Hardware API in
-% MATLAB
 % Usage:
 %   retval      return value for diagnostic purposes
 %   dll         fullpath to mpdev.dll (ie C:\mpdev.dll)
-%   dothdir     directory where mdpev.h 
+%   dothdir     directory where mdpev.h
 %   mptype      enumerated value for MP device, refer to the documentation
 %   mpmethod    enumerated value for MP communication method, refer to the
 %   documentation
-%   sn          Serial Number of the mp150 if necessary  
+%   sn          Serial Number of the mp150 if necessary
+
+% Turn off annoying enum warnings
+warning off MATLAB:loadlibrary:enumexists;
 
 libname = 'mpdev';
 doth = 'mpdev.h';
-
-%parameter error checking
-if nargin < 5
-    error('Not enough arguements. MPDEVDEMO requires 5 arguemnets');
-end
 
 if isnumeric(dll) || isnumeric(dothdir)
     error('DLL and Header Directory has to be string')
 end
 
-if exist(dll) ~= 3 && exist(dll) ~= 2
+if exist(dll, 'file') ~= 2
     error('DLL file does not exist');
 end
 
-if exist(strcat(dothdir,doth)) ~= 2
+if exist(strcat(dothdir, doth), 'file') ~= 2
     error('Header file does not exist');
 end
-%end parameter check
 
-%check if the library is already loaded
+% Check if the library is already loaded
 if libisloaded(libname)
     calllib(libname, 'disconnectMPDev');
     unloadlibrary(libname);
 end
 
-%turn off annoying enum warnings
-warning off MATLAB:loadlibrary:enumexists;
+% Load the library
+loadlibrary(dll, strcat(dothdir, doth));
 
-%load the library
-loadlibrary(dll,strcat(dothdir,doth));
-fprintf(1,'\nMPDEV.DLL LOADED!!!\n');
-libfunctions(libname, '-full');
-
-%begin demonstration
+%%%%%%%%%%%%%%%%%%%%%%%%
+%% Begin Demonstration %
+%%%%%%%%%%%%%%%%%%%%%% %
 try
-   % fprintf(1,'Hit any key to continue...\n');
-   % pause;
-    
-   
-    
-    
-     %Connect
-    fprintf(1,'Connecting...\n');
+    % Connect to the device
+    fprintf(1,'Connecting to BIOPAC...\n');
 
-    [retval, sn] = calllib(libname,'connectMPDev',mptype,mpmethod,sn);
+    retval = calllib(libname, 'connectMPDev', mptype, mpmethod, sn);
 
-    if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Connect.\n');
+    if ~strcmp(retval, 'MPSUCCESS')
+        fprintf(1, 'Failed to Connect.\n');
         calllib(libname, 'disconnectMPDev');
         return
     end
+    
+    % Succesfully connected
+    fprintf(1, 'Connected\n');
 
-    fprintf(1,'Connected\n');
+    %% Handshake preparation
+    portA = 9090;
+    portA2 = 9092;
 
+    ipB = '10.1.8.138';
+    portB = 9091;
+    portB2 = 9093;
 
+    udpB = udp(ipB, portA, 'LocalPort', portB);
+    udpB2 = udp(ipB, portB2, 'LocalPort', portA2);
 
+    fopen(udpB);
+    fopen(udpB2);
+    fprintf('1\n');
 
+    handshake(udpB, udpB2);
 
+    % Compute experiment parameters
+    times = str2double(fscanf(udpB));
+    runs = str2double(fscanf(udpB));
+    ftime = str2double(fscanf(udpB));
+    noftime = str2double(fscanf(udpB));
+    samplerate = str2double(fscanf(udpB));
 
+    % Add 1 sec for beginning and 4 sec for the end for graphic delays
+    recordtime = (5 * (ftime + noftime)) * (times + 5);
+    samplestorecord = recordtime * samplerate;
 
+    results = zeros(runs);
+    data = [];
+    cuedata = [];
 
-
-
-
-
-%%
-ipA = '10.1.3.111'; portA = 9090;portA2 = 9092;
-ipB = '10.1.8.138'; portB = 9091;portB2 = 9093;
-
-udpB = udp(ipB,portA,'LocalPort',portB);
-udpB2 = udp(ipB,portB2,'LocalPort',portA2);
-
-fopen(udpB)
-fopen(udpB2)
-fprintf('1\n');
-
-
-handshake(udpB,udpB2);
-
-times=str2double(fscanf(udpB))
-runs=str2double(fscanf(udpB))
-ftime=str2double(fscanf(udpB))
-noftime=str2double(fscanf(udpB))
-samplerate=str2double(fscanf(udpB))
-
-recordtime=(5*(ftime+noftime))*times+5 %1 saniye baþta 4 sn sonda ekle (grafik gecýkmeleri)
-samplestorecord=recordtime*samplerate
-
-
-results=zeros(runs);
-data=[];
-cuedata=[];
-
-
-
-
-%%
-    %Configure
-    fprintf(1,'Setting Sample Rate\n');
+    % Configure device parameters
+    fprintf(1, 'Setting Sample Rate\n');
 
     retval = calllib(libname, 'setSampleRate', (1000/samplerate));
 
-    if ~strcmp(retval,'MPSUCCESS')
-       fprintf(1,'Failed to Set Sample Rate.\n');
+    if ~strcmp(retval, 'MPSUCCESS')
+       fprintf(1, 'Failed to Set Sample Rate.\n');
        calllib(libname, 'disconnectMPDev');
        return
     end
 
-    fprintf(1,'Sample Rate Set\n');
-    
-    fprintf(1,'Setting to Acquire on Channel 1\n');
-
-    aCH = [int32(1),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0),int32(0)];
-    
-    %if mptype is not MP150
-    if mptype ~= 101
-        %then it must be the mp35 (102) or mp36 (103)
-        aCH = [int32(1),int32(0),int32(0),int32(0)];
+    fprintf(1, 'Setting to Acquire on Channel 1\n');
+    if mptype == 101
+        % MP150, 16 channels
+        aCH = zeros(1, 16, 'int32');
+    else
+        % MP3x, 4 channels
+        aCH = zeros(1, 4, 'int32');
     end
     
-    [retval, aCH] = calllib(libname, 'setAcqChannels',aCH);
+    % Acquire only on the 1st channel
+    aCH(1) = 1;
+   
+    retval = calllib(libname, 'setAcqChannels', aCH);
 
     if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Set Acq Channels.\n');
+        fprintf(1, 'Failed to Set Acq Channels.\n');
         calllib(libname, 'disconnectMPDev');
         return
     end
-    
-    fprintf(1,'Channels Set\n');
 
-%%
-
-
-    [retval, presets] = calllib(libname, 'loadXMLPresetFile','PresetFiles\channelpresets2.xml'); 
-      if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Load Presets.\n');
-        calllib(libname, 'disconnectMPDev');
-        return
-      end
-   retval
-presets
-
- [retval, preset] = calllib(libname, 'configChannelByPresetID',0,'a22'); 
-      if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Load Presets.\n');
-        calllib(libname, 'disconnectMPDev');
-        return
-      end
-    retval
-preset
- %set trigger
-
-      [retval] = calllib(libname, 'setMPTrigger', 'MPTRIGEXT',false,1,1);
-
-    if ~strcmp(retval,'MPSUCCESS')
-       fprintf(1,'Failed to Set Trigger.\n');
-       calllib(libname, 'disconnectMPDev');
-       return
-    end
-%retval
-
-
-
-
-
-%%
-
-for i = 1:runs
- 
-    
- % fprintf(1,'Hit any key to start data acq...\n');
- %  pause;   
-    %Acquire
-    fprintf(1,'Start Acquisition Daemon\n');
-    
-    retval = calllib(libname, 'startMPAcqDaemon');
-  
-    if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Start Acquisition Daemon.\n');
+    retval = calllib(libname, 'loadXMLPresetFile', 'PresetFiles\channelpresets2.xml');
+    if ~strcmp(retval, 'MPSUCCESS')
+        fprintf(1,'Failed to Load Presets XML file.\n');
         calllib(libname, 'disconnectMPDev');
         return
     end
-    
- 
 
-      retval = calllib(libname, 'startAcquisition');
-
-    if ~strcmp(retval,'MPSUCCESS')
-        fprintf(1,'Failed to Start Acquisition.\n');
+    retval = calllib(libname, 'configChannelByPresetID', 0, 'a22');
+    if ~strcmp(retval, 'MPSUCCESS')
+        fprintf(1, 'Failed to Load Presets.\n');
         calllib(libname, 'disconnectMPDev');
         return
     end
- 
-      fprintf(1,'Start Acquisition\n');
-   
-    %Download and Plot 1000 samples in realtime
-  %  fprintf(1,'Download and Plot 1000 samples in Real-Time\n');
-    numRead = 0;
-    numValuesToRead = 50; %collect 1 second worth of data points per iteration
-    remaining = samplestorecord; %collect 1000 samples per channel
-    tbuff(1:numValuesToRead) = double(0); %initialize the correct amount of data
-    bval = 0;
-    offset = 1;
-   
-  %    figure;
-     
-    %loop until there still some data to acquire
 
- 
-    while(remaining > 0)
-      
-       if numValuesToRead > remaining
-               numValuesToRead = remaining;
-       end
-       
-       [retval, tbuff, numRead]  = calllib(libname, 'receiveMPData',tbuff, numValuesToRead, numRead);
-    
-       if ~strcmp(retval,'MPSUCCESS')
-           fprintf(1,'Failed to receive MP data.\n');
-           calllib(libname, 'disconnectMPDev');
-           return
-       else
-            buff(offset:offset+double(numRead(1))-1) = tbuff(1:double(numRead(1))); 
-            
-            %Process
-            len = length(buff);
+    % Set Trigger
+    retval = calllib(libname, 'setMPTrigger', 'MPTRIGEXT', false, 1, 1);
 
-%             X(1:len) = (1:len);
-%             %plot graph
-%             pause(1/100);
-%            
-%             
-%             plot((1:50),buff(len-49:len),'g-'),axis([1 50 -100 100]);
-%             title('Data Plot of for Channel 1');
-%     
-%             xlabel('Nth Sample');
-       end
-       offset = offset + double(numValuesToRead);
-       remaining = remaining-double(numValuesToRead);
+    if ~strcmp(retval, 'MPSUCCESS')
+        fprintf(1, 'Failed to Set Trigger.\n');
+        calllib(libname, 'disconnectMPDev');
+        return
     end
-    eeg(i,:)=buff;
 
-   
-   %stop acquisition
-   fprintf(1,'Stop Acquisition\n');
+    for i = 1:runs
+        fprintf(1, 'Start Acquisition Daemon\n');
 
-   retval = calllib(libname, 'stopAcquisition');
-   if ~strcmp(retval,'MPSUCCESS')
-       fprintf(1,'Failed to Stop\n');
-       calllib(libname, 'disconnectMPDev');
-       return
-   end
-   
-   
-%%
+        retval = calllib(libname, 'startMPAcqDaemon');
 
-handshake(udpB,udpB2);
+        if ~strcmp(retval,'MPSUCCESS')
+            fprintf(1, 'Failed to Start Acquisition Daemon.\n');
+            calllib(libname, 'disconnectMPDev');
+            return
+        end
 
+        retval = calllib(libname, 'startAcquisition');
 
-data1=[];
-cue1=[];
+        if ~strcmp(retval,'MPSUCCESS')
+            fprintf(1,'Failed to Start Acquisition.\n');
+            calllib(libname, 'disconnectMPDev');
+            return
+        end
 
-for j = 1:times
+        fprintf(1, 'Start Acquisition\n');
 
-pause(0.1)
-data2=fscanf(udpB);
-size(data2);
-while(size(data2,2)<55)
-data2=[' ',data2];
-end
-datanum=str2num(data2);
-data1=[data1,datanum(3:7)]
-data=[data;datanum];
-end
+        % Download and Plot 1000 samples in realtime
+        numRead = 0;
 
+        % Collect 1 second worth of data points per iteration
+        numValuesToRead = 50;
 
- pause(0.1)
+        % Collect 1000 samples per channel
+        remaining = samplestorecord;
+        
+        % Initialize the correct amount of data
+        tbuff(1:numValuesToRead) = double(0);
+        offset = 1;
 
- for j = 1:times
- 
- pause(0.1)
- cuedata2=fscanf(udpB);
- size(cuedata2);
- while(size(cuedata2,2)<55);
- cuedata2=[' ',cuedata2];
- end
-cuedatanum=str2num(cuedata2);
-cue1=[cue1,int32(cuedatanum(3:7)*200)]
- cuedata=[cuedata;cuedatanum];
- end
+        while(remaining > 0)
 
+           if numValuesToRead > remaining
+                   numValuesToRead = remaining;
+           end
 
+           [retval, tbuff, numRead]  = calllib(libname, 'receiveMPData', tbuff, numValuesToRead, numRead);
 
-%process
-tic
-results(i)=processdata(eeg(i,:),data1,cue1,times)
-toc
+           if ~strcmp(retval, 'MPSUCCESS')
+               fprintf(1, 'Failed to receive MP data.\n');
+               calllib(libname, 'disconnectMPDev');
+               return
+           else
+                buff(offset:offset + double(numRead(1)) - 1) = tbuff(1:double(numRead(1))); 
 
+                % SET TO true FOR LIVE PLOTTING
+                if false
+                    len = length(buff);
 
+                    %plot graph
+                    pause(1/100);
 
-%send result
+                    plot((1:50), buff(len-49:len), 'g-'), axis([1 50 -100 100]);
+                    title('Data Plot For Channel 1');
+                    xlabel('N''th Sample');
+                end
+           end
 
+           offset = offset + double(numValuesToRead);
+           remaining = remaining - double(numValuesToRead);
+        end
+         
+        eeg(i, :) = buff;
 
-fprintf(udpB2,num2str(results(i)));
-pause(1)
+        % Stop acquisition
+        fprintf(1, 'Stop Acquisition\n');
 
+        retval = calllib(libname, 'stopAcquisition');
+        if ~strcmp(retval,'MPSUCCESS')
+            fprintf(1,'Failed to Stop\n');
+            calllib(libname, 'disconnectMPDev');
+            return
+        end
 
-   
-   
-end
+        handshake(udpB,udpB2);
 
+        data1 = [];
+        cue1  = [];
 
+        %% FIXME: Comment this block to understand what is going on!
+        for j = 1:times
+            pause(0.1);
+            data2 = fscanf(udpB);
+            size(data2);
 
+            while (size(data2, 2) < 55)
+                data2 = [' ', data2];
+            end
 
+            datanum = str2num(data2);
+            data1 = [data1, datanum(3:7)];
+            data = [data; datanum];
+        end
 
+        % Wait 0.1 seconds
+        pause(0.1);
 
+        for j = 1:times
+            pause(0.1);
+            cuedata2 = fscanf(udpB);
+            size(cuedata2);
 
-%%
+            %% FIXME: IS THIS A MISTAKE?
+            %% BEFORE: while (size(cuedata2, 2) < 55);
+            while (size(cuedata2, 2) < 55)
+                cuedata2 = [' ', cuedata2];
+            end
 
+            cuedatanum = str2num(cuedata2);
+            cue1 = [cue1, int32(cuedatanum(3:7) * 200)];
+            cuedata = [cuedata; cuedatanum];
+        end
 
-   %disconnect
-   fprintf(1,'Disconnecting...\n')
-   retval = calllib(libname, 'disconnectMPDev');
-    
-    
-   
-    
-   
-    if ~strcmp(retval,'MPSUCCESS')
+        % Process results
+        tic
+        results(i) = processdata(eeg(i,:), data1, cue1, times);
+        toc
+
+        % Send results back
+        fprintf(udpB2, num2str(results(i)));
+        pause(1)
+    end
+
+    % Disconnect
+    fprintf(1, 'Disconnecting...\n')
+    retval = calllib(libname, 'disconnectMPDev');
+
+    if ~strcmp(retval, 'MPSUCCESS')
         fprintf(1,'Acquisition Daemon Demo Failed.\n');
         calllib(libname, 'disconnectMPDev')
     end
     
-% %%
+    assignin('base', 'eeg', eeg);
+    assignin('base', 'recordtime', recordtime);
+    assignin('base', 'times', times);
+    assignin('base', 'runs', runs);
+    assignin('base', 'yftime', ftime);
+    assignin('base', 'noftime', noftime);
+    assignin('base', 'samplerate', samplerate);
+    assignin('base', 'results', results);
+    assignin('base', 'stims', data);
+    assignin('base', 'cues', cuedata);
 
+    % Cleanup
+    fclose(udpB2);
+    fclose(udpB);
+    delete(udpB2);
+    delete(udpB);
+    clear udpB udpB2
 
-% assignin('base','eeg',eeg);
-%
-assignin('base','eeg',eeg);
-assignin('base','recordtime',recordtime);
-assignin('base','times',times);
-assignin('base','runs',runs);
-assignin('base','yftime',ftime);
-assignin('base','noftime',noftime);
-assignin('base','samplerate',samplerate);
-assignin('base','results',results);
-
-
-
-
-
-
-results
-
-
-
-%%
-
-
-
-
-
-
-
-fclose(udpB2)
-fclose(udpB)
-delete(udpB2)
-delete(udpB)
-clear udpB udpB2 
-
-
-
-
-
-
-assignin('base','stims',data);
-assignin('base','cues',cuedata);
-
-
-
-
-catch
-    %disonnect cleanly in case of system error
+catch err
+    % Disconnect cleanly in case of system error
     calllib(libname, 'disconnectMPDev');
+    
+    % Unload the library
     unloadlibrary(libname);
-    %return 'ERROR' and rethrow actual systerm error
-    retval = 'ERROR';
-    rethrow(lasterror);
-fclose(udpB2)
-fclose(udpB)
-delete(udpB2)
-delete(udpB)
-clear udpB udpB2 
 
+    fclose(udpB2);
+    fclose(udpB);
+    delete(udpB2);
+    delete(udpB);
+    clear udpB udpB2
 
 end
 
+% Unload library
 unloadlibrary(libname);
-
-
-%fprintf(udpB2,'ok')
-%% Clean Up Machine B
-
-
-
-
-%clear 
 
 
