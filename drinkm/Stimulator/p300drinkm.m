@@ -1,13 +1,12 @@
 function p300drinkm(times, runs, ftime, noftime, samplerate)
 
 % Store drink names
-drinks = ['Water', 'Coffee', 'Tea', 'Soda', 'Beer'];
+drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
 
 % Load auditory stimuli
 load('data/soundz.mat', 'soundz');
 
-% Initialize PTB
-Screen('Preference', 'SkipSyncTests', 0);
+GetSecs;
 
 % Choosing the display with the highest dislay number is
 % a best guess about where you want the stimulus displayed.
@@ -70,14 +69,16 @@ Screen('Flip', w);
 % Used to trigger the Analyzer
 mynoise(1,:) = MakeBeep(1000, 0.1, 8192);
 
-stimulus = zeros(runs, times * 5);
+% Stimulus data
+stimulus = zeros(runs, times * length(drinks));
 
-% Cues for delays
-cues = zeros(runs, times * 5);
+% Cues for timestamps
+cues = zeros(runs, times * length(drinks));
 
 for k = 1:runs
     count = 0;
 
+    % Prepare the subject
     Screen('DrawText', w, '3', 100, 100, tcolor);
     Screen('Flip', w);
     WaitSecs(1);
@@ -86,10 +87,13 @@ for k = 1:runs
     WaitSecs(1);
     Screen('DrawText', w, '1', 100, 100, tcolor);
     Screen('Flip', w);
+    
+    % Send the trigger
     Snd('Play', mynoise, 8192, 16);
 
-    tic
-    WaitSecs(1);              
+    start = GetSecs;
+    tic;
+    %WaitSecs(1);
 
     for j = 1:times
 
@@ -99,7 +103,7 @@ for k = 1:runs
             randnum = R1(i);
             Screen('DrawTexture', w, textures(randnum));
             count = count + 1;
-            cues(k, count) = toc;
+            cues(k, count) = int32(samplerate * toc);
             stimulus(k, count) = randnum;
             Screen('Flip', w);
             sound(soundz(randnum, :)*0.7, 16000);
@@ -109,9 +113,12 @@ for k = 1:runs
             WaitSecs(noftime);
         end
     end
-
-    WaitSecs(3);
-    Snd('Quiet');
+    
+    stop = GetSecs;
+    fprintf('Finished in %f seconds.\n', stop - start);
+    
+    assignin('base', 'stimulus', stimulus);
+    assignin('base', 'cues', cues);
 
     % Waiting for process
     Screen('DrawText', w, 'Waiting for results..', 100, 100, tcolor);
@@ -119,49 +126,33 @@ for k = 1:runs
 
     handshake(udpA, udpA2);
 
-    fprintf('sending data\n');
-
-    for j = 1:times
-        pause(0.1);
-        data = [k, j, stimulus(k, (5*(j-1)) + 1:(5*(j-1)) + 5)];
-        fprintf(udpA, num2str(data));
-    end
-
+    fprintf('Sending data\n');
+    
+    fwrite(udpA, cues(k, :), 'int32');
     pause(0.1);
-
-    for j = 1:times
-        pause(0.1);
-        cuedata = [k, j, cues(k,(5*(j-1)) + 1:(5*(j-1)) + 5)];
-        fprintf(udpA, num2str(cuedata));
-    end
+    fwrite(udpA, stimulus(k, :));
 
     fprintf('data sent\n');
 
+    % Get the result and print that on the screen
     result = str2double(fscanf(udpA2));
-    resultStr = sprintf('Your choice is: %s', drinks(result));
-    
+    resultStr = sprintf('Your choice is: %s', drinks{result});
     Screen('DrawText', w, resultStr, 100, 100, tcolor);
     Screen('Flip', w);
 
+    % Wait 1 second
     WaitSecs(1);
 
 end
 
-assignin('base', 'Stims', stimulus);
-assignin('base', 'Cues', cues); 
+KbWait;
 
-kbwait
-
-fclose(udpA);
-delete(udpA);
-fclose(udpA2);
-delete(udpA2);
-clear udpA udpA2
+fclose('all');
 
 % This "catch" section executes in case of an error in the "try" section
 % above.  Importantly, it closes the onscreen window if it's open.
 Screen('CloseAll');
-psychrethrow(psychlasterror);
+rethrow(psychlasterror);
 end
 
 
