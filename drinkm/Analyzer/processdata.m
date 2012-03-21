@@ -1,7 +1,5 @@
 function[result] = processdata(eeg, stims, cues, times)
 
-tic
-
 % EEG wavelet
 [C,L] = wavedec(eeg, 8, 'db4');
 D6    = wrcoef('d', C, L, 'db4', 6);
@@ -13,6 +11,7 @@ eegw  = D8 + D6 + D7;
 eegwzm = eegw - mean(eegw);
 
 % Initialize EEG data variable
+% FIXME: Why 160?
 eegdata = zeros(5, 160);
 
 for j = 1:(times * 5)
@@ -24,14 +23,14 @@ eegdata = eegdata / times;
 tops = zeros(1, 5);
 
 for i = 1:5
-    tops(1, i) = (norm(eegdata(i, 60:10:100)) / sqrt(times)) * sign(sum(eegdata(i, 60:10:100)));
+    % 60:10:100 -> P300 (60th sample = 0.300 ms for sampling rate == 200)
+    p300_eeg = eegdata(i, 60:10:100);
+    tops(1, i) = (norm(p300_eeg) / sqrt(times)) * sign(sum(p300_eeg));
 end
 
 [C, I] = max(tops(1:5));
 
 result = I;
-
-toc
 
 assignin('base', 'eegdata', eegdata);
 

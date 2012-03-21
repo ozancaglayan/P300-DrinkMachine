@@ -77,18 +77,35 @@ try
     noftime = str2double(fscanf(udpB));
     samplerate = str2double(fscanf(udpB));
 
-    % Add 1 sec for beginning and 4 sec for the end for graphic delays
-    recordtime = (5 * (ftime + noftime)) * (times + 5);
-    samplestorecord = recordtime * samplerate;
+    % FIXME: Add 50 samples for extra
+    recordtime = (5 * (ftime + noftime)) * times;
+    samplestorecord = recordtime * samplerate + 50;
+    
+    assignin('base', 'recordtime', recordtime);
+    assignin('base', 'times', times);
+    assignin('base', 'runs', runs);
+    assignin('base', 'yftime', ftime);
+    assignin('base', 'noftime', noftime);
+    assignin('base', 'samplerate', samplerate);
+    
+    drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
+    assignin('base', 'drinks', drinks);
+    
+    % EEG data
+    eeg = zeros(runs, samplestorecord);
+
+    % Stimulus data
+    stimulus = zeros(runs, times * length(drinks));
+
+    % Cues for timestamps
+    cues = zeros(runs, times * length(drinks));
     
     % Channel preset
     % a25: EMG
     % a22: EEG
-    channel_preset = 'a22';
+    channel_preset = 'a25';
 
     results = zeros(runs);
-    data = [];
-    cuedata = [];
 
     % Configure device parameters
     fprintf(1, 'Setting Sample Rate\n');
@@ -165,7 +182,6 @@ try
 
         fprintf(1, 'Start Acquisition\n');
 
-        % Download and Plot 1000 samples in realtime
         numRead = 0;
 
         % Collect 1 second worth of data points per iteration
@@ -175,46 +191,41 @@ try
         remaining = samplestorecord;
         
         % Initialize the correct amount of data
-        tbuff(1:numValuesToRead) = double(0);
+        temp_buffer(1:numValuesToRead) = double(0);
         offset = 1;
 
         while(remaining > 0)
-            
-            fprintf('Remaining: %d\n', remaining);
 
            if numValuesToRead > remaining
                    numValuesToRead = remaining;
            end
 
-           tic;
-           [retval, tbuff, numRead]  = calllib(libname, 'receiveMPData', tbuff, numValuesToRead, numRead);
-           fprintf('Read %d doubles in %f seconds.\n', numRead, toc);
+           [retval, temp_buffer, numRead] = calllib(libname, 'receiveMPData', temp_buffer, numValuesToRead, numRead);
 
            if ~strcmp(retval, 'MPSUCCESS')
                fprintf(1, 'Failed to receive MP data.\n');
                calllib(libname, 'disconnectMPDev');
                return
            else
-                buff(offset:offset + double(numRead(1)) - 1) = tbuff(1:double(numRead(1))); 
+                eeg(i, offset:offset + numRead - 1) = temp_buffer(1:numRead); 
 
                 % SET TO true FOR LIVE PLOTTING
                 if false
-                    len = length(buff);
+                    %live_plot = figure;
+                    % len = length(buff);
 
                     %plot graph
-                    pause(1/100);
+                    pause(1/1000);
 
-                    plot((1:50), buff(len-49:len), 'g-'), axis([1 50 -100 100]);
-                    title('Data Plot For Channel 1');
-                    xlabel('N''th Sample');
+                    plot((1:samplestorecord), eeg(i,:), 'r-'), axis([1 samplestorecord -1 1]);
+                    title('Acquired Signal Plot');
+                    xlabel('Sample N');
                 end
            end
 
-           offset = offset + double(numValuesToRead);
-           remaining = remaining - double(numValuesToRead);
+           offset = offset + numRead;
+           remaining = remaining - numRead;
         end
-         
-        eeg(i, :) = buff;
 
         % Stop acquisition
         fprintf(1, 'Stop Acquisition\n');
@@ -226,54 +237,27 @@ try
             return
         end
 
-        handshake(udpB,udpB2);
-
-        data1 = [];
-        cue1  = [];
-
-        %% FIXME: Comment this block to understand what is going on!
-        for j = 1:times
-            pause(0.1);
-            data2 = fscanf(udpB);
-            size(data2);
-
-            while (size(data2, 2) < 55)
-                data2 = [' ', data2];
-            end
-
-            datanum = str2num(data2);
-            data1 = [data1, datanum(3:7)];
-            data = [data; datanum];
-        end
-
-        % Wait 0.1 seconds
+        % Read stimulus and cues from the other computer
+        handshake(udpB, udpB2);
+        cues(i, :) = fread(udpB, size(cues, 2), 'int32')';
         pause(0.1);
-
-        for j = 1:times
-            pause(0.1);
-            cuedata2 = fscanf(udpB);
-            size(cuedata2);
-
-            %% FIXME: IS THIS A MISTAKE?
-            %% BEFORE: while (size(cuedata2, 2) < 55);
-            while (size(cuedata2, 2) < 55)
-                cuedata2 = [' ', cuedata2];
-            end
-
-            cuedatanum = str2num(cuedata2);
-            cue1 = [cue1, int32(cuedatanum(3:7) * 200)];
-            cuedata = [cuedata; cuedatanum];
-        end
+        stimulus(i, :) = fread(udpB, size(stimulus, 2))';
+        
+        assignin('base', 'eeg', eeg);
+        assignin('base', 'stims', stimulus);
+        assignin('base', 'cues', cues);
 
         % Process results
-        tic
-        results(i) = processdata(eeg(i,:), data1, cue1, times);
-        toc
+        tic;
+        results(i) = processdata(eeg(i,:), stimulus, cues, times);
+        toc;
 
         % Send results back
         fprintf(udpB2, num2str(results(i)));
-        pause(1)
+        pause(1);
     end
+    
+    assignin('base', 'results', results);
 
     % Disconnect
     fprintf(1, 'Disconnecting...\n')
@@ -284,40 +268,28 @@ try
         calllib(libname, 'disconnectMPDev')
     end
     
-    assignin('base', 'eeg', eeg);
-    assignin('base', 'recordtime', recordtime);
-    assignin('base', 'times', times);
-    assignin('base', 'runs', runs);
-    assignin('base', 'yftime', ftime);
-    assignin('base', 'noftime', noftime);
-    assignin('base', 'samplerate', samplerate);
-    assignin('base', 'results', results);
-    assignin('base', 'stims', data);
-    assignin('base', 'cues', cuedata);
+    % Unload library
+    unloadlibrary(libname);
 
     % Cleanup
-    fclose(udpB2);
-    fclose(udpB);
-    delete(udpB2);
-    delete(udpB);
-    clear udpB udpB2
+    fclose('all');
 
 catch err
+    
+    rethrow(err);
+    
     % Disconnect cleanly in case of system error
     calllib(libname, 'disconnectMPDev');
-    
+
     % Unload the library
     unloadlibrary(libname);
 
-    fclose(udpB2);
-    fclose(udpB);
-    delete(udpB2);
-    delete(udpB);
-    clear udpB udpB2
+    % Cleanup
+    fclose('all');
 
 end
+end
 
-% Unload library
-unloadlibrary(libname);
+
 
 
