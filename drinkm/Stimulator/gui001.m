@@ -132,7 +132,7 @@ val7 = str2double(get(handles.numruns,'String'));
 ftime = str2double(get(handles.edit8,'String'))/1000; 
 noftime = str2double(get(handles.edit9,'String'))/1000; 
 samplerate = str2double(get(handles.edit11,'String')); 
-deneme001(val6,val7,ftime,noftime,samplerate);
+p300drinkm(val6,val7,ftime,noftime,samplerate);
 
 
 

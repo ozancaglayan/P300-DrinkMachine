@@ -97,17 +97,16 @@ for k = 1:runs
 
     for j = 1:times
 
-        R1 = randperm(5);
-
-        for i = 1:5
-            randnum = R1(i);
+        for randnum = randperm(5)
             Screen('DrawTexture', w, textures(randnum));
             count = count + 1;
             cues(k, count) = int32(samplerate * toc);
             stimulus(k, count) = randnum;
-            Screen('Flip', w);
+            [VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', w);
             sound(soundz(randnum, :)*0.7, 16000);
             WaitSecs(ftime);
+            
+            % Draw the background
             Screen('DrawTexture', w, texback);
             Screen('Flip', w);
             WaitSecs(noftime);
