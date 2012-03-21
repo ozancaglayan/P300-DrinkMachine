@@ -80,6 +80,11 @@ try
     % Add 1 sec for beginning and 4 sec for the end for graphic delays
     recordtime = (5 * (ftime + noftime)) * (times + 5);
     samplestorecord = recordtime * samplerate;
+    
+    % Channel preset
+    % a25: EMG
+    % a22: EEG
+    channel_preset = 'a22';
 
     results = zeros(runs);
     data = [];
@@ -123,7 +128,7 @@ try
         return
     end
 
-    retval = calllib(libname, 'configChannelByPresetID', 0, 'a22');
+    retval = calllib(libname, 'configChannelByPresetID', 0, channel_preset);
     if ~strcmp(retval, 'MPSUCCESS')
         fprintf(1, 'Failed to Load Presets.\n');
         calllib(libname, 'disconnectMPDev');
@@ -164,7 +169,7 @@ try
         numRead = 0;
 
         % Collect 1 second worth of data points per iteration
-        numValuesToRead = 50;
+        numValuesToRead = samplerate;
 
         % Collect 1000 samples per channel
         remaining = samplestorecord;
@@ -174,12 +179,16 @@ try
         offset = 1;
 
         while(remaining > 0)
+            
+            fprintf('Remaining: %d\n', remaining);
 
            if numValuesToRead > remaining
                    numValuesToRead = remaining;
            end
 
+           tic;
            [retval, tbuff, numRead]  = calllib(libname, 'receiveMPData', tbuff, numValuesToRead, numRead);
+           fprintf('Read %d doubles in %f seconds.\n', numRead, toc);
 
            if ~strcmp(retval, 'MPSUCCESS')
                fprintf(1, 'Failed to receive MP data.\n');
