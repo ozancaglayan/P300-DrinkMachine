@@ -78,8 +78,8 @@ try
     samplerate = str2double(fscanf(udpB));
 
     % FIXME: Add 50 samples for extra
-    recordtime = (5 * (ftime + noftime)) * times;
-    samplestorecord = recordtime * samplerate + 50;
+    recordtime = (5 * (ftime + noftime)) * times + 1;
+    samplestorecord = recordtime * samplerate;
     
     assignin('base', 'recordtime', recordtime);
     assignin('base', 'times', times);
@@ -103,7 +103,7 @@ try
     % Channel preset
     % a25: EMG
     % a22: EEG
-    channel_preset = 'a25';
+    channel_preset = 'a22';
 
     results = zeros(runs);
 
@@ -207,7 +207,7 @@ try
                calllib(libname, 'disconnectMPDev');
                return
            else
-                eeg(i, offset:offset + numRead - 1) = temp_buffer(1:numRead); 
+                eeg(i, offset:offset + numRead - 1) = temp_buffer(1:numRead);
 
                 % SET TO true FOR LIVE PLOTTING
                 if false
@@ -249,7 +249,7 @@ try
 
         % Process results
         tic;
-        results(i) = processdata(eeg(i,:), stimulus, cues, times);
+        results(i) = processdata(eeg(i,:), stimulus(i,:), cues(i,:), times);
         toc;
 
         % Send results back
