@@ -493,7 +493,7 @@
 						<q>1.0000</q>
 					</dspfilter>
 					<dspfilter type="BandStopLineFrequency">
-						<frequency>60.0000</frequency>
+						<frequency>50.0000</frequency>
 						<q>1.0000</q>
 					</dspfilter>
 				</dspfiltercollection>

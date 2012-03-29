@@ -14,18 +14,6 @@ warning off MATLAB:loadlibrary:enumexists;
 libname = 'mpdev';
 doth = 'mpdev.h';
 
-if isnumeric(dll) || isnumeric(dothdir)
-    error('DLL and Header Directory has to be string')
-end
-
-if exist(dll, 'file') ~= 2
-    error('DLL file does not exist');
-end
-
-if exist(strcat(dothdir, doth), 'file') ~= 2
-    error('Header file does not exist');
-end
-
 % Check if the library is already loaded
 if libisloaded(libname)
     calllib(libname, 'disconnectMPDev');
@@ -77,7 +65,7 @@ try
     noftime = str2double(fscanf(udpB));
     samplerate = str2double(fscanf(udpB));
 
-    % FIXME: Add 50 samples for extra
+    % FIXME: Add 1 second padding for timing problems
     recordtime = (5 * (ftime + noftime)) * times + 1;
     samplestorecord = recordtime * samplerate;
     
@@ -93,6 +81,7 @@ try
     
     % EEG data
     eeg = zeros(runs, samplestorecord);
+    ecg = zeros(runs, samplestorecord);
 
     % Stimulus data
     stimulus = zeros(runs, times * length(drinks));
@@ -103,7 +92,8 @@ try
     % Channel preset
     % a25: EMG
     % a22: EEG
-    channel_preset = 'a22';
+    % a16: ECG
+    channel_presets = {'a22', 'a16'};
 
     results = zeros(runs);
 
@@ -118,17 +108,11 @@ try
        return
     end
 
-    fprintf(1, 'Setting to Acquire on Channel 1\n');
-    if mptype == 101
-        % MP150, 16 channels
-        aCH = zeros(1, 16, 'int32');
-    else
-        % MP3x, 4 channels
-        aCH = zeros(1, 4, 'int32');
+    fprintf(1, 'Setting to Acquire on Channels\n');
+    aCH = zeros(1, 4, 'int32');
+    for i = 1:length(channel_presets)
+        aCH(i) = 1;
     end
-    
-    % Acquire only on the 1st channel
-    aCH(1) = 1;
    
     retval = calllib(libname, 'setAcqChannels', aCH);
 
@@ -145,11 +129,13 @@ try
         return
     end
 
-    retval = calllib(libname, 'configChannelByPresetID', 0, channel_preset);
-    if ~strcmp(retval, 'MPSUCCESS')
-        fprintf(1, 'Failed to Load Presets.\n');
-        calllib(libname, 'disconnectMPDev');
-        return
+    for i = 1:length(channel_presets)
+        retval = calllib(libname, 'configChannelByPresetID', i-1, channel_presets{i});
+        if ~strcmp(retval, 'MPSUCCESS')
+            fprintf(1, 'Failed to Load Presets for channel %d\n', i);
+            calllib(libname, 'disconnectMPDev');
+            return
+        end
     end
 
     % Set Trigger
@@ -185,14 +171,15 @@ try
         numRead = 0;
 
         % Collect 1 second worth of data points per iteration
-        numValuesToRead = samplerate;
+        numValuesToRead = samplerate * length(channel_presets);
 
-        % Collect 1000 samples per channel
-        remaining = samplestorecord;
+        remaining = samplestorecord * length(channel_presets);
         
         % Initialize the correct amount of data
         temp_buffer(1:numValuesToRead) = double(0);
         offset = 1;
+        
+        divider = length(channel_presets);
 
         while(remaining > 0)
 
@@ -207,23 +194,19 @@ try
                calllib(libname, 'disconnectMPDev');
                return
            else
-                eeg(i, offset:offset + numRead - 1) = temp_buffer(1:numRead);
+               eeg(i, offset:offset + numRead/divider - 1) = temp_buffer(1:divider:numRead);
+               ecg(i, offset:offset + numRead/divider - 1) = temp_buffer(2:divider:numRead);
 
-                % SET TO true FOR LIVE PLOTTING
-                if false
-                    %live_plot = figure;
-                    % len = length(buff);
-
-                    %plot graph
-                    pause(1/1000);
-
-                    plot((1:samplestorecord), eeg(i,:), 'r-'), axis([1 samplestorecord -1 1]);
-                    title('Acquired Signal Plot');
-                    xlabel('Sample N');
-                end
+               % SET TO true FOR LIVE PLOTTING
+               if false
+                   pause(1/1000);
+                   plot((1:samplestorecord), eeg(i,:), 'r-'), axis([1 samplestorecord -1 1]);
+                   title('Acquired Signal Plot');
+                   xlabel('Sample N');
+               end
            end
 
-           offset = offset + numRead;
+           offset = offset + numRead/divider;
            remaining = remaining - numRead;
         end
 
@@ -244,6 +227,7 @@ try
         stimulus(i, :) = fread(udpB, size(stimulus, 2))';
         
         assignin('base', 'eeg', eeg);
+        assignin('base', 'ecg', ecg);
         assignin('base', 'stims', stimulus);
         assignin('base', 'cues', cues);
 
@@ -272,11 +256,12 @@ try
     unloadlibrary(libname);
 
     % Cleanup
-    fclose('all');
+    fclose(udpB);
+    fclose(udpB2);
 
 catch err
     
-    rethrow(err);
+    fprintf(1, 'Caught exception, cleaning up..\n');
     
     % Disconnect cleanly in case of system error
     calllib(libname, 'disconnectMPDev');
@@ -285,8 +270,10 @@ catch err
     unloadlibrary(libname);
 
     % Cleanup
-    fclose('all');
-
+    fclose(udpB);
+    fclose(udpB2);
+    
+    rethrow(err);
 end
 end
 
