@@ -1,7 +1,5 @@
 function[result] = processdata(eeg, stims, cues, times)
 
-tic
-
 % EEG wavelet
 [C,L] = wavedec(eeg, 8, 'db4');
 D6    = wrcoef('d', C, L, 'db4', 6);
@@ -30,8 +28,6 @@ end
 [C, I] = max(tops(1:5));
 
 result = I;
-
-toc
 
 assignin('base', 'eegdata', eegdata);
 

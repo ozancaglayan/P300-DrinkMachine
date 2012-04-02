@@ -16,7 +16,7 @@ try
     % Store drink names
     drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
     
-    % Load audio data
+    % Load audio data, each stimulus is 0.5 seconds long
     sounds = zeros(length(drinks), 8000);
     for i = 1:length(drinks)
         [sounds(i,:), sampling_freq, ~] = wavread(strcat('data\', drinks{i}, '.wav'));
@@ -35,14 +35,13 @@ try
     sample_rate = 200;
     
     % Highlighting time in s (i.e. A specific drink is painted)
-    flash_time = 0.5;
+    flash_time = 0.500;
     
     % Steady state time in s (i.e. Background texture is shown)
-    noflash_time = 0.3;
+    noflash_time = 0.300;
     
-    % Preliminary BIOPAC MP35 Setup, will return a libname to further call
-    % stuff. 3rd parameter is trigger, 4th is sample rate.
-    % mpdev = setupbiopac('C:\BHAPI\mpdev.dll', 'C:\BHAPI\', false, sample_rate);
+    % Create MP35 object
+    mp35 = BIOPACDevice('C:\BHAPI\', 'mp35', 'usb', sample_rate, {'a22'});
     
     % Pre-allocate stimulus data (5 = len(drinks))
     stimulus = zeros(nb_repetition, nb_trial * length(drinks));
@@ -51,14 +50,11 @@ try
     cues = zeros(nb_repetition, nb_trial * length(drinks));
     
     % Colors
-    fg_color  = [255 255 255];
-    
+    fg_color = [255 255 255];
+
     % Open window
-    
-    % Initialize PTB 
-    Screen('Preference', 'SkipSyncTests', 0);
-    
     window = Screen('OpenWindow', 0, [0 0 0]);
+    flip_interval = Screen('GetFlipInterval', window);
     
     % Load images and create PTB textures       
     tex0 = Screen('MakeTexture', window, imread('data/drinksback', 'JPG'));
@@ -110,20 +106,18 @@ try
                 
                 
                 % Put some data in cues and stimulus
-                % count = count + 1;
-                % cues(repetition_count, count) = toc;
-                % stimulus(repetition_count, count) = flashing;
+                count = count + 1;
+                cues(repetition_count, count) = toc;
+                stimulus(repetition_count, count) = flashing;
                 
                 % target = target + noflash_time;
 
-                % Flip the new texture and play the sound
-                %[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] =
-
                 startTime = PsychPortAudio('Start', pahandle, [], target, 1);
-                %PsychPortAudio('Start', pahandle, [], target);
-                [VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', window, target);
+                PsychPortAudio('Start', pahandle, [], target);
+                %[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', window, target);
+                Screen('Flip', window, target);
                 
-                fprintf('VBLTimestamp: %f, Audio Timestamp: %f\n', VBLTimeStamp, startTime);
+                %fprintf('VBLTimestamp: %f, Audio Timestamp: %f\n', VBLTimeStamp, startTime);
 
                 
                 % Highlight for flash_time ms.
@@ -147,7 +141,17 @@ catch err
     if strcmp(err.identifier, 'P300Drink:ExperimentInterrupted')
         fprintf('Interrupted: %s', err.msg);
     end
-    cleanup();
+    
+    mp35.disconnect();
+    
+    if window
+        Screen('CloseAll');
+    end
+    
+    if pahandle
+        PsychPortAudio('Stop', pahandle);
+        PsychPortAudio('Close', pahandle);
+    end
     rethrow(err);
 
 % End of try-catch block
