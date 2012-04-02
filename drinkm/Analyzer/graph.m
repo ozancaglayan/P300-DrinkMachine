@@ -2,7 +2,7 @@ function graph(eeg, cues, stims, drinks)
 samplerate = 200;
 
 plot(eeg, 'g-');
-axis([0 length(eeg), -100 100]);
+axis([0 length(eeg), -1 1]);
 title('Single Run EEG Recording');
 xlabel('Sample points');
 ylabel('Amplitude');
@@ -10,8 +10,8 @@ hold on;
 %plot(cues, 0, 'ko');
 
 for i = 1:length(cues)
-    text(cues(i), 40, strcat('\leftarrow ', drinks{stims(i)}), 'rotation', 90, 'FontSize', 12);
-    cue_indicator = line([cues(i), cues(i)], [-100, 40]);
+    text(cues(i), 0.4, strcat('\leftarrow ', drinks{stims(i)}), 'rotation', 90, 'FontSize', 12);
+    cue_indicator = line([cues(i), cues(i)], [-0.80, 0.4]);
     set(cue_indicator, 'Color', [0.5 0.5 0.5]);
     % Calculate the area to be colored for flashed interval
     %flash_interval = [cues(i):cues(i)+samplerate*0.5];

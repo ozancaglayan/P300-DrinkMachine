@@ -66,7 +66,7 @@ try
     samplerate = str2double(fscanf(udpB));
 
     % FIXME: Add 1 second padding for timing problems
-    recordtime = (5 * (ftime + noftime)) * times + 1;
+    recordtime = (5 * (ftime + noftime)) * times + 3;
     samplestorecord = recordtime * samplerate;
     
     assignin('base', 'recordtime', recordtime);
@@ -88,14 +88,15 @@ try
 
     % Cues for timestamps
     cues = zeros(runs, times * length(drinks));
+
+    % Hold the results
+    results(1:runs) = 0;
     
     % Channel preset
     % a25: EMG
     % a22: EEG
     % a16: ECG
     channel_presets = {'a22', 'a16'};
-
-    results = zeros(runs);
 
     % Configure device parameters
     fprintf(1, 'Setting Sample Rate\n');
@@ -196,14 +197,6 @@ try
            else
                eeg(i, offset:offset + numRead/divider - 1) = temp_buffer(1:divider:numRead);
                ecg(i, offset:offset + numRead/divider - 1) = temp_buffer(2:divider:numRead);
-
-               % SET TO true FOR LIVE PLOTTING
-               if false
-                   pause(1/1000);
-                   plot((1:samplestorecord), eeg(i,:), 'r-'), axis([1 samplestorecord -1 1]);
-                   title('Acquired Signal Plot');
-                   xlabel('Sample N');
-               end
            end
 
            offset = offset + numRead/divider;
@@ -232,9 +225,7 @@ try
         assignin('base', 'cues', cues);
 
         % Process results
-        tic;
-        results(i) = processdata(eeg(i,:), stimulus(i,:), cues(i,:), times);
-        toc;
+        results(i) = processdata(eeg(i,:), ecg(i,:), stimulus(i,:), cues(i,:), times, 'db4');
 
         % Send results back
         fprintf(udpB2, num2str(results(i)));
@@ -260,7 +251,6 @@ try
     fclose(udpB2);
 
 catch err
-    
     fprintf(1, 'Caught exception, cleaning up..\n');
     
     % Disconnect cleanly in case of system error

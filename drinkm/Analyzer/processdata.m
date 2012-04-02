@@ -1,10 +1,13 @@
-function[result] = processdata(eeg, stims, cues, times)
+function[result] = processdata(eeg, ecg, stims, cues, times, wfilter)
+
+% Do some normalization
+normalized_eeg
 
 % EEG wavelet
-[C,L] = wavedec(eeg, 8, 'db4');
-D6    = wrcoef('d', C, L, 'db4', 6);
-D7    = wrcoef('d', C, L, 'db4', 7);
-D8    = wrcoef('d', C, L, 'db4', 8);
+[C,L] = wavedec(eeg, 8, wfilter);
+D6    = wrcoef('d', C, L, wfilter, 6);
+D7    = wrcoef('d', C, L, wfilter, 7);
+D8    = wrcoef('d', C, L, wfilter, 8);
 eegw  = D8 + D6 + D7;
 
 % EEG zero mean
@@ -19,6 +22,7 @@ for j = 1:(times * 5)
     eegdata(stims(j), :) = eegdata(stims(j), :) + eegwzm(cues(j):cues(j) + 159);
 end
 
+% Average over times
 eegdata = eegdata / times;
 
 tops = zeros(1, 5);
@@ -26,8 +30,8 @@ tops = zeros(1, 5);
 for i = 1:5
     % 60:10:100 -> P300 (60th sample = 0.300 ms for sampling rate == 200)
     p300_data = eegdata(i, 60:100);
-    %tops(1, i) = sqrt(sum((p300_data.^2)) / (100-60));
-    tops(1, i) = (norm(p300_data) / sqrt(times)) * sign(sum(p300_data));
+    tops(1, i) = sqrt(sum((p300_data.^2)) / (100-60));
+    %tops(1, i) = (norm(p300_data) / sqrt(times)) * sign(sum(p300_data));
 end
 
 tops
