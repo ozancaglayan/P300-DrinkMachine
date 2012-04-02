@@ -7,6 +7,8 @@ try
     InitializePsychSound(1);
     PsychPortAudio('Verbosity', 5);
     
+    pahandle = 0;
+    
     GetSecs;
 
     %%%
@@ -15,138 +17,147 @@ try
     
     % Store drink names
     drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
+    assignin('base', 'drinks', drinks);
     
     % Load audio data, each stimulus is 0.5 seconds long
-    sounds = zeros(length(drinks), 8000);
+    sounds = zeros(length(drinks), 24000);
     for i = 1:length(drinks)
-        [sounds(i,:), sampling_freq, ~] = wavread(strcat('data\', drinks{i}, '.wav'));
+        [tmp, sampling_freq, ~] = wavread(strcat('data\', drinks{i}, '.wav'));
+        sounds(i, :) = interp(tmp, 3);
     end
       
     % Get a PA handle for audio playback
-    pahandle = PsychPortAudio('Open', [], [], 1, sampling_freq, 1); 
+    pahandle = PsychPortAudio('Open', [], 1, 4, 48000, 1);
     
     % Number of repetitions (i.e. How much experiments are we going to do?)
     nb_repetition = 1;
     
     % Number of trials for each repetition
-    nb_trial = 1;
+    nb_trial = 5;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
     
     % Highlighting time in s (i.e. A specific drink is painted)
-    flash_time = 0.500;
+    flash_time = 0.300;
     
     % Steady state time in s (i.e. Background texture is shown)
-    noflash_time = 0.300;
+    noflash_time = 0.500;
+    
+    trial_samples = (flash_time + noflash_time) * nb_trial * sample_rate;
+    assignin('base', 'trial_samples', trial_samples);
+    
+    %records(nb_repetition, sample_rate * (flash_time + noflash_time)) = 0;
     
     % Create MP35 object
-    mp35 = BIOPACDevice('C:\BHAPI\', 'mp35', 'usb', sample_rate, {'a22'});
+    %mp35 = BIOPACDevice('C:\BHAPI\', 'mp35', 'usb', sample_rate, {'a22'});
     
     % Pre-allocate stimulus data (5 = len(drinks))
     stimulus = zeros(nb_repetition, nb_trial * length(drinks));
     
     % Pre-allocate cues for delays
     cues = zeros(nb_repetition, nb_trial * length(drinks));
-    
-    % Colors
-    fg_color = [255 255 255];
 
     % Open window
     window = Screen('OpenWindow', 0, [0 0 0]);
-    flip_interval = Screen('GetFlipInterval', window);
+    Priority(MaxPriority(window));
+    % To suppress outputs
+    Screen('Preference', 'Verbosity', 1);
     
-    % Load images and create PTB textures       
-    tex0 = Screen('MakeTexture', window, imread('data/drinksback', 'JPG'));
-    tex1 = Screen('MakeTexture', window, imread('data/Water', 'JPG'));
-    tex2 = Screen('MakeTexture', window, imread('data/Coffee', 'JPG'));
-    tex3 = Screen('MakeTexture', window, imread('data/Tea', 'JPG'));
-    tex4 = Screen('MakeTexture', window, imread('data/Soda', 'JPG'));
-    tex5 = Screen('MakeTexture', window, imread('data/Beer', 'JPG'));
-    textures = [tex1, tex2, tex3, tex4, tex5];
+    % The slack is just to place the stimulus presentation deadline
+    % in the middle of a video refresh cycle, so it has some "slack" to the
+    % previous and next frame boundary.
+    slack = Screen('GetFlipInterval', window) / 2;
     
+    % Pre-allocate textures
+    textures = zeros(length(drinks) + 1, 1);
+    
+    % Load images and create PTB textures
+    for i = 1:length(drinks)
+        textures(i) = Screen('MakeTexture', window, imread(strcat('data/', drinks{i}, '.jpg')));
+    end
+    textures(6) = Screen('MakeTexture', window, imread('data/drinksback.jpg'));
+    
+    % Preload textures if possible
+    Screen('PreloadTextures', window, textures);
+    
+    % This is for disabling keyboard presses
     %ListenChar(2);
     
-    % Start the experiment. Outer loop is for each repetition.
-    for repetition_count = 1:nb_repetition
-        count = 0;
-        
-        % Show countdown to prepare the subject
-        Screen('DrawText', window, '3', 100, 100, fg_color);
-        Screen('Flip', window);
-        WaitSecs(1);
-        Screen('DrawText', window, '2', 100, 100, fg_color);
-        Screen('Flip', window);
-        WaitSecs(1);
-        Screen('DrawText', window, '1', 100, 100, fg_color);
-        Screen('Flip', window);
-        
-        %tic;
-        %WaitSecs(1);
-        
-        for trial_count = 1:nb_trial
-            
-            % Random flashing order for drinks
-            for flashing = randperm(5)
-                PsychPortAudio('FillBuffer', pahandle, sounds(flashing, :));
-
-                % Draw the new texture
-                Screen('DrawTexture', window, textures(flashing));
-                
-                target = GetSecs + noflash_time;
-                
-                % check for key-press to cleanly interrupt the experiment
-%                 [keyPressed, ~, keyCode, ~] = KbCheck;
-%                 
-%                 if keyPressed && keyCode(KbName('ESCAPE'))
-%                     me = MException('p300drink:experimentinterrupted', ...
-%                         'user interrupted the experiment');
-%                     throw(me);
-%                 end
-                
-                
-                % Put some data in cues and stimulus
-                count = count + 1;
-                cues(repetition_count, count) = toc;
-                stimulus(repetition_count, count) = flashing;
-                
-                % target = target + noflash_time;
-
-                startTime = PsychPortAudio('Start', pahandle, [], target, 1);
-                PsychPortAudio('Start', pahandle, [], target);
-                %[VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', window, target);
-                Screen('Flip', window, target);
-                
-                %fprintf('VBLTimestamp: %f, Audio Timestamp: %f\n', VBLTimeStamp, startTime);
-
-                
-                % Highlight for flash_time ms.
-                % WaitSecs(flash_time);
-                
-                % Revert back to the background texture and wait noflash_time ms.
-                %target = target + flash_time;
-                Screen('DrawTexture', window, tex0);
-                Screen('Flip', window, target + flash_time);
-                %WaitSecs(noflash_time);
-            end
+    % Pre generate random stimulus order
+    for r = 1:nb_repetition
+        for t = 1:nb_trial
+            perm = randperm(length(drinks));
+            bound = length(drinks) * t;
+            %if ~all(perm == 1:length(drinks)) && ...
+                    %(max(ismember(stimulus(r, bound-4:bound), perm, 'rows')) == 0)
+            stimulus(r, bound-4:bound) = perm;
+            %end
         end
     end
     
-    KbWait;
-    Screen('CloseAll');
-    PsychPortAudio('Stop', pahandle);
-    PsychPortAudio('Close', pahandle);
+    assignin('base', 'stimulus', stimulus);
     
+    % Start the experiment. Outer loop is for each repetition.
+    for repetition_count = 1:nb_repetition       
+        % Prepare the subject first
+        Screen('DrawTexture', window, textures(6));
+        Screen('Flip', window);
+        WaitSecs(1.0);
+        
+        % Start acquisition
+        %mp35.startAcquisition();
+        
+        % Get the start_time in secs
+        last_onset = GetSecs();
+        
+        % stim_count counts from 1 to 25 if length(drinks) == 5
+        for stim_count = 1:nb_trial * length(drinks)
+            target_time = last_onset + noflash_time - slack;
+
+            % Fetch stimuli (e.g. one of {1,2,3,4,5})
+            stimuli = stimulus(repetition_count, stim_count);
+            
+            % Draw the new texture
+            Screen('DrawTexture', window, textures(stimuli));
+            
+            % Fill audio buffer
+            PsychPortAudio('FillBuffer', pahandle, sounds(stimuli, :));
+            PsychPortAudio('Start', pahandle, [], target_time);
+
+            % Flip and save stimulus onset time into cues
+            cues(repetition_count, stim_count) = Screen('Flip', window, target_time);
+            
+            % Revert back to the background texture and wait noflash_time ms.
+            Screen('DrawTexture', window, textures(6));
+            last_onset = Screen('Flip', window, cues(repetition_count, stim_count) + flash_time - slack);
+        end
+        
+        % Stop acquisition
+        %mp35.stopAcquisition();
+        %mp35.receiveData();
+
+    end
+    
+    assignin('base', 'cues', cues);
+    KbWait;
+    Priority(0);
+    Screen('CloseAll');
+    %mp35.disconnect();
+    if pahandle
+        PsychPortAudio('Stop', pahandle);
+        PsychPortAudio('Close', pahandle);
+    end
+       
 catch err
     if strcmp(err.identifier, 'P300Drink:ExperimentInterrupted')
         fprintf('Interrupted: %s', err.msg);
     end
     
-    mp35.disconnect();
+    Priority(0);
+    %mp35.disconnect();
     
-    if window
-        Screen('CloseAll');
-    end
+    Screen('CloseAll');
     
     if pahandle
         PsychPortAudio('Stop', pahandle);
@@ -159,3 +170,13 @@ end
 
 % End of function
 end
+
+            
+% check for key-press to cleanly interrupt the experiment
+%                 [keyPressed, ~, keyCode, ~] = KbCheck;
+%
+%                 if keyPressed && keyCode(KbName('ESCAPE'))
+%                     me = MException('p300drink:experimentinterrupted', ...
+%                         'user interrupted the experiment');
+%                     throw(me);
+%                 end

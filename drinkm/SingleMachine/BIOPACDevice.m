@@ -15,8 +15,10 @@ classdef BIOPACDevice < handle
         buffer_size;
         samples_read = 0;
         
+        ts_start = 0;
+        
         % Default sample rate is 200Hz
-        sample_rate = 1000/200;
+        sample_rate = 200;
 
         % Default preset is EEG, single channel
         % Length of this cell array also defines the channel number
@@ -40,8 +42,8 @@ classdef BIOPACDevice < handle
             % Constructor
             if nargin > 0
                 obj.lib_path = lib_path;
-                obj.sample_rate = double(1000/sample_rate);
-                obj.buffer_size = sample_rate * length(ch_presets);
+                obj.sample_rate = sample_rate;
+                obj.buffer_size = obj.sample_rate * length(ch_presets);
                 obj.buffer(1:obj.buffer_size) = double(0);
                 obj.ch_presets = ch_presets;
                 
@@ -107,7 +109,10 @@ classdef BIOPACDevice < handle
         end
 
         function retval = disconnect(obj)
-            retval = obj.wrap_calllib('disconnectMPDev');
+            retval = 'The device is not ready';
+            if strcmp(obj.status(), 'MPREADY')
+                retval = obj.wrap_calllib('disconnectMPDev');
+            end
         end
         
         function retval = configureChannelsByPresetID(obj)
@@ -128,10 +133,22 @@ classdef BIOPACDevice < handle
             retval = obj.wrap_calllib('setAcqChannels', obj.channel_mask);
         end
         
-        function retval = receiveData(obj)
-            %[retval, buff, ~, samplesRead] = obj.wrap_calllib('receiveMPData', buff, samplesRequested, samplesRead);
-            [retval, obj.buffer, obj.samples_read] = calllib(obj.lib_handle, ...
-                'receiveMPData', obj.buffer, obj.buffer_size, obj.samples_read);
+        function wb = receiveData(obj)
+            %obj.whole_buffer = zeros(1, obj.samples_to_read);
+            samples_to_read = floor((obj.stop_acquisition - obj.start_acquisition) * obj.sample_rate);
+            tbuff(1:obj.buffer_size) = 0;
+            buff_read = 0;
+            wb(1:samples_to_read) = 0;
+            offset = 1;
+            while (samples_to_read > 0)
+                [retval, tbuff, buff_read] = calllib(obj.lib_handle, ...
+                'receiveMPData', tbuff, obj.buffer_size, buff_read);
+                wb(offset:offset+obj.buffer_size-1) = tbuff;
+                samples_to_read = samples_to_read - buff_read;
+                offset = offset + buff_read;
+                %retval
+            end
+            
         end
         
         function retval = getChannelData(obj, ch_number)
@@ -139,15 +156,47 @@ classdef BIOPACDevice < handle
         end
         
         function retval = setSampleRate(obj)
-            retval = obj.wrap_calllib('setSampleRate', double(obj.sample_rate));
+            retval = obj.wrap_calllib('setSampleRate', double(1000/obj.sample_rate));
         end
         
         function retval = startAcquisition(obj)
+            obj.ts_start = GetSecs();
+            fprintf(1, '***** %f\n', obj.ts_start);
             retval = obj.wrap_calllib('startAcquisition');
         end
         
         function retval = stopAcquisition(obj)
             retval = obj.wrap_calllib('stopAcquisition');
+        end
+        
+        function buff = readAndStopAcquisition(obj)
+            % We have to read the data before stopping so let's do it in here
+            % Calculate how much samples approx. we have to download
+            ts_stop = GetSecs();
+            fprintf(1, 'ts_stop: %f\n', ts_stop);
+            remaining = floor((GetSecs() - ts_stop) * obj.buffer_size) + 10;
+            fprintf(1, 'Samples to read: %d\n', remaining);
+            buff(1:remaining) = 0;
+            offset = 1;
+            temp_buff(1:obj.buffer_size) = 0;
+            buff_read = 0;
+            buff_to_read = obj.buffer_size;
+            
+            while (remaining > 0)
+                if (remaining < buff_to_read)
+                    buff_to_read = remaining;
+                end
+                    
+                [~, temp_buff, buff_read] = calllib(obj.lib_handle, ...
+                'receiveMPData', temp_buff, buff_to_read, buff_read);
+                fprintf(1, 'Read: %d samples\n', buff_read);
+                buff(offset:offset + buff_read - 1) = temp_buff(1:buff_read);
+                
+                offset = offset + buff_read;
+                remaining = remaining - buff_read;
+            end
+            
+            f_retval = obj.wrap_calllib('stopAcquisition');
         end
         
         function retval = startMpAcqDaemon(obj)
