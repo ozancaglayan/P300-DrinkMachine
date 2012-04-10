@@ -1136,15 +1136,15 @@
 				</settings>
 				<dspfiltercollection>
 					<dspfilter type="LowPass">
-						<frequency>200.0000</frequency>
+						<frequency>1000.0000</frequency>
 						<q>0.7070</q>
 					</dspfilter>
 					<dspfilter type="None">
-						<frequency>60.0000</frequency>
+						<frequency>50.0000</frequency>
 						<q>0.7070</q>
 					</dspfilter>
 					<dspfilter type="None">
-						<frequency>60.0000</frequency>
+						<frequency>50.0000</frequency>
 						<q>5.0000</q>
 					</dspfilter>
 				</dspfiltercollection>

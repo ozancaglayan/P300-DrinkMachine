@@ -1,35 +1,40 @@
-function[result] = processdata(eeg, stims, cues, times)
+function[result, eegdata] = processdata(eeg, stims, cues, times, sample_rate, ...
+                                        window_length, drinks, wfilter)
 
 % EEG wavelet
-[C,L] = wavedec(eeg, 8, 'db4');
-D6    = wrcoef('d', C, L, 'db4', 6);
-D7    = wrcoef('d', C, L, 'db4', 7);
-D8    = wrcoef('d', C, L, 'db4', 8);
+[C,L] = wavedec(eeg, 8, wfilter);
+D6    = wrcoef('d', C, L, wfilter, 6);
+D7    = wrcoef('d', C, L, wfilter, 7);
+D8    = wrcoef('d', C, L, wfilter, 8);
 eegw  = D8 + D6 + D7;
 
 % EEG zero mean
 eegwzm = eegw - mean(eegw);
 
-% Initialize EEG data variable
-eegdata = zeros(5, 160);
+% P300 interval: 0.3sec - 0.5sec
+p300_start = 0.3 * sample_rate;
+p300_end = 0.5 * sample_rate;
 
-for j = 1:(times * 5)
-    eegdata(stims(j), :) = eegdata(stims(j), :) + eegwzm(cues(j):cues(j) + 159);
+% Initialize EEG data variable
+eegdata = zeros(length(drinks), window_length);
+
+for j = 1:(times * length(drinks))
+    eegdata(stims(j), :) = eegdata(stims(j), :) + eegwzm(cues(j):cues(j) + window_length - 1);
 end
 
+% Average over 'times'
 eegdata = eegdata / times;
 
-tops = zeros(1, 5);
+tops = zeros(1, length(drinks));
 
-for i = 1:5
-    tops(1, i) = (norm(eegdata(i, 60:10:100)) / sqrt(times)) * sign(sum(eegdata(i, 60:10:100)));
+for i = 1:length(drinks)
+    p300_data = eegdata(i, p300_start:p300_end);
+    tops(1, i) = sqrt(sum((p300_data.^2)) / (p300_end-p300_start));
+    %tops(1, i) = (norm(p300_data) / sqrt(times)) * sign(sum(p300_data));
 end
 
-[C, I] = max(tops(1:5));
-
-result = I;
-
-assignin('base', 'eegdata', eegdata);
+tops
+[C, result] = max(tops(1:length(drinks)));
 
 end
 
