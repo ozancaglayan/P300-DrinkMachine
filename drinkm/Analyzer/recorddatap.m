@@ -82,7 +82,22 @@ try
     % EEG data
     eeg = zeros(runs, samplestorecord);
     ecg = zeros(runs, samplestorecord);
-
+    
+    % Normalized ones
+    n_eeg = zeros(runs, samplestorecord);
+    n_ecg = zeros(runs, samplestorecord);
+    
+    % Clean EEG
+    clean_eeg = zeros(runs, samplestorecord);
+    
+    % We take 180 samples
+    average_eeg = zeros(length(drinks), 160, runs);
+    average_n_eeg = zeros(length(drinks), 160, runs);
+    average_clean_eeg = zeros(length(drinks), 160, runs);
+    
+    % Processed EEG stimulus windows
+    final_eeg = zeros(length(drinks), (noftime + ftime) * samplerate);
+    
     % Stimulus data
     stimulus = zeros(runs, times * length(drinks));
 
@@ -148,7 +163,7 @@ try
         return
     end
 
-    for i = 1:runs
+    for n_run = 1:runs
         fprintf(1, 'Start Acquisition Daemon\n');
 
         retval = calllib(libname, 'startMPAcqDaemon');
@@ -195,40 +210,76 @@ try
                calllib(libname, 'disconnectMPDev');
                return
            else
-               eeg(i, offset:offset + numRead/divider - 1) = temp_buffer(1:divider:numRead);
-               ecg(i, offset:offset + numRead/divider - 1) = temp_buffer(2:divider:numRead);
+               eeg(n_run, offset:offset + numRead/divider - 1) = temp_buffer(1:divider:numRead);
+               ecg(n_run, offset:offset + numRead/divider - 1) = temp_buffer(2:divider:numRead);
            end
 
            offset = offset + numRead/divider;
            remaining = remaining - numRead;
         end
+        
+        assignin('base', 'eeg', eeg);
+        assignin('base', 'ecg', ecg);
 
         % Stop acquisition
         fprintf(1, 'Stop Acquisition\n');
 
         retval = calllib(libname, 'stopAcquisition');
-        if ~strcmp(retval,'MPSUCCESS')
-            fprintf(1,'Failed to Stop\n');
+        if ~strcmp(retval, 'MPSUCCESS')
+            fprintf(1, 'Failed to Stop\n');
             calllib(libname, 'disconnectMPDev');
             return
         end
 
         % Read stimulus and cues from the other computer
         handshake(udpB, udpB2);
-        cues(i, :) = fread(udpB, size(cues, 2), 'int32')';
+        cues(n_run, :) = fread(udpB, size(cues, 2), 'int32')';
         pause(0.1);
-        stimulus(i, :) = fread(udpB, size(stimulus, 2))';
+        stimulus(n_run, :) = fread(udpB, size(stimulus, 2))';
         
-        assignin('base', 'eeg', eeg);
-        assignin('base', 'ecg', ecg);
         assignin('base', 'stims', stimulus);
         assignin('base', 'cues', cues);
+        
+        % Normalize signals between (-1, 1), use maximum value
+        % from 400:end as the beginnings of the records are noisy and fluctuating.
+        n_eeg(n_run, :) = eeg(n_run, :)./max(eeg(n_run, 1000:end));
+        n_ecg(n_run, :) = ecg(n_run, :)./max(ecg(n_run, 1000:end));
+        
+        % Subtract ECG from EEG
+        clean_eeg(n_run, :) = n_eeg(n_run, :) - n_ecg(n_run, :);
+        
+        assignin('base', 'n_eeg', n_eeg);
+        assignin('base', 'n_ecg', n_ecg);
+        assignin('base', 'clean_eeg', clean_eeg);
+
+        for i = 1:times * length(drinks)
+            average_eeg(stimulus(n_run, i), :, n_run) = average_eeg(stimulus(n_run, i), :, n_run) + eeg(n_run, cues(n_run, i):cues(n_run, i)+160-1);
+            average_n_eeg(stimulus(n_run, i), :, n_run) = average_n_eeg(stimulus(n_run, i), :, n_run) + n_eeg(n_run, cues(n_run, i):cues(n_run, i)+160-1);
+            average_clean_eeg(stimulus(n_run, i), :, n_run) = average_clean_eeg(stimulus(n_run, i), :, n_run) + clean_eeg(n_run, cues(n_run, i):cues(n_run, i)+160-1);
+        end
+        
+        for i = length(drinks)
+            average_eeg(i, :, n_run) = average_eeg(i, :, n_run) / times;
+            average_n_eeg(i, :, n_run) = average_n_eeg(i, :, n_run) / times;
+            average_clean_eeg(i, :, n_run) = average_clean_eeg(i, :, n_run) / times;
+        end
+
+        assignin('base', 'average_eeg', average_eeg);
+        assignin('base', 'average_n_eeg', average_n_eeg);
+        assignin('base', 'average_clean_eeg', average_clean_eeg);        
 
         % Process results
-        results(i) = processdata(eeg(i,:), ecg(i,:), stimulus(i,:), cues(i,:), times, 'db4');
+        [results(n_run), eegdata] = processdata(eeg(n_run, :), ...
+                                                           stimulus(n_run, :), ...
+                                                           cues(n_run, :), ...
+                                                           times, samplerate, ...
+                                                           ftime, noftime, ...
+                                                           drinks, 'db4');
+        assignin('base', 'eegdata', eegdata);                     
+        assignin('base', 'final_eeg', final_eeg);
 
         % Send results back
-        fprintf(udpB2, num2str(results(i)));
+        fprintf(udpB2, num2str(results(n_run)));
         pause(1);
     end
     

@@ -1,7 +1,5 @@
-function[result] = processdata(eeg, ecg, stims, cues, times, wfilter)
-
-% Do some normalization
-normalized_eeg
+function[result, eegdata] = processdata(eeg, stims, cues, times, sample_rate, ...
+                                        ftime, noftime, drinks, wfilter)
 
 % EEG wavelet
 [C,L] = wavedec(eeg, 8, wfilter);
@@ -11,35 +9,33 @@ D8    = wrcoef('d', C, L, wfilter, 8);
 eegw  = D8 + D6 + D7;
 
 % EEG zero mean
-% EMG: eegw = eeg;
 eegwzm = eegw - mean(eegw);
 
-% Initialize EEG data variable
-% FIXME: Why 160? (0.800 flash time)
-eegdata = zeros(5, 160);
+% P300 interval: 0.3sec - 0.5sec
+p300_start = 0.3 * sample_rate;
+p300_end = 0.5 * sample_rate;
 
-for j = 1:(times * 5)
-    eegdata(stims(j), :) = eegdata(stims(j), :) + eegwzm(cues(j):cues(j) + 159);
+% Initialize EEG data variable
+window_length = (noftime + ftime) * sample_rate;
+eegdata = zeros(length(drinks), window_length);
+
+for j = 1:(times * length(drinks))
+    eegdata(stims(j), :) = eegdata(stims(j), :) + eegwzm(cues(j):cues(j) + window_length - 1);
 end
 
-% Average over times
+% Average over 'times'
 eegdata = eegdata / times;
 
-tops = zeros(1, 5);
+tops = zeros(1, length(drinks));
 
-for i = 1:5
-    % 60:10:100 -> P300 (60th sample = 0.300 ms for sampling rate == 200)
-    p300_data = eegdata(i, 60:100);
-    tops(1, i) = sqrt(sum((p300_data.^2)) / (100-60));
+for i = 1:length(drinks)
+    p300_data = eegdata(i, p300_start:p300_end);
+    tops(1, i) = sqrt(sum((p300_data.^2)) / (p300_end-p300_start));
     %tops(1, i) = (norm(p300_data) / sqrt(times)) * sign(sum(p300_data));
 end
 
 tops
-[C, I] = max(tops(1:5));
-
-result = I;
-
-assignin('base', 'eegdata', eegdata);
+[C, result] = max(tops(1:length(drinks)));
 
 end
 
