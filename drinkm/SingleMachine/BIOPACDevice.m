@@ -72,7 +72,10 @@ classdef BIOPACDevice < handle
             obj.configureChannelsByPresetID();
             obj.setSampleRate();
             obj.setAcquisitionChannels();
-            obj.startMpAcqDaemon();
+            
+            % Read once to clean gain fluctuations
+            obj.startAcquisition();
+            obj.readAndStopAcquisition(obj.sample_rate * obj.nb_channels);
         end
         
         function delete(obj)
@@ -121,6 +124,7 @@ classdef BIOPACDevice < handle
         end
         
         function retval = startAcquisition(obj)
+            obj.startMpAcqDaemon();
             retval = calllib(obj.lib_handle, 'startAcquisition');
         end
         
@@ -135,7 +139,7 @@ classdef BIOPACDevice < handle
             buff = zeros(obj.nb_channels, samples_to_fetch);
             
             % Collect 1 second worth of data points per iteration
-            to_read = obj.sample_rate * obj.nb_channels;
+            to_read = obj.sample_rate * obj.nb_channels * 5;
             
             % Number of remaining samples to read
             remaining = samples_to_fetch * obj.nb_channels;
@@ -153,7 +157,9 @@ classdef BIOPACDevice < handle
                     'receiveMPData', temp_buffer, to_read, total_read);
                 
                 if ~strcmp(retval, 'MPSUCCESS')
-                    fprintf(1, 'Failed to receive MP data.\n');
+                    fprintf(1, 'Failed to receive MP data (Error: %s)\n', retval);
+                    fprintf(1, 'MPDaemonLastError: %s\n', obj.getMPDaemonLastError());
+                    obj.stopAcquisition();
                     obj.disconnect();
                     return
                 else
@@ -174,6 +180,10 @@ classdef BIOPACDevice < handle
         
         function retval = startMpAcqDaemon(obj)
             retval = calllib(obj.lib_handle, 'startMPAcqDaemon');
+        end
+        
+        function retval = getMPDaemonLastError(obj)
+            retval = calllib(obj.lib_handle, 'getMPDaemonLastError');
         end
     end
 end

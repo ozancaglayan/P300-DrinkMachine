@@ -30,10 +30,10 @@ try
                               frequency, nr_channels, [], suggestedlatency);
     
     % Number of repetitions (i.e. How much experiments are we going to do?)
-    nb_runs = 3;
+    nb_runs = 1;
     
     % Number of trials for each repetition
-    nb_trials = 10;
+    nb_trials = 11;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -52,7 +52,7 @@ try
     trial_window_size = (noflash_time + flash_time) * sample_rate;
     
     % Add 1 second worth of padding for now
-    trial_samples = (trial_window_size * nb_trials * length(drinks)) + (sample_rate * length(channels));
+    trial_samples = (trial_window_size * (nb_trials-1) * length(drinks)) + sample_rate;
     assignin('base', 'trial_samples', trial_samples);
     
     % For storing the results
@@ -127,8 +127,6 @@ try
     end
     
     assignin('base', 'stimulus', stimulus);
-    
-    %sch = findResource();
 
     % Start the experiment. Outer loop is for each repetition.
     for n_run = 1:nb_runs       
@@ -143,8 +141,6 @@ try
         % Get the start_time in secs
         last_onset = GetSecs();
         initial_start = last_onset;
-        
-        %j = batch(sch, @getBiopacData, 1, {2, 200, trial_samples});
         
         % stim_count counts from 1 to 25 if length(drinks) == 5
         for stim_count = 1:nb_trials * length(drinks)
@@ -169,20 +165,16 @@ try
         end
         
         % Stop acquisition
-%         wait(j);
-%         r = getAllOutputArguments(j);
-%         buff = r{1};
-%         destroy(j);
-        buff = mp35.readAndStopAcquisition(trial_samples);
+        buff = mp35.readAndStopAcquisition(trial_samples + 800);
         assignin('base', 'buff', buff);
         
-        eeg(n_run, :) = buff(1, :);
-        ecg(n_run, :) = buff(2, :);
+        eeg(n_run, :) = buff(1, trial_window_size*length(drinks)+1:end);
+        ecg(n_run, :) = buff(2, trial_window_size*length(drinks)+1:end);
         %mic(n_run, :) = buff(3,:);
         
         assignin('base', 'eeg', eeg);
         assignin('base', 'ecg', ecg);
-        assignin('base', 'mic', mic);
+        %assignin('base', 'mic', mic);
         
         % Normalize cues
         video_cues(n_run, :) = int32(ceil((ts_video_cues(n_run, :) - initial_start) * sample_rate));
@@ -198,6 +190,13 @@ try
         n_eeg(n_run, :) = eeg(n_run, :)./max(eeg(n_run, 1000:end));
         n_ecg(n_run, :) = ecg(n_run, :)./max(ecg(n_run, 1000:end));
         
+        % Shrink cues and stimulus down to (nb-trial-1)*length(drinks)
+        shrinked_cues = video_cues(n_run, length(drinks)+1:end) - (length(drinks)*trial_window_size);
+        shrinked_stimulus = stimulus(n_run, length(drinks)+1:end);
+
+        assignin('base', 'stimulus', shrinked_stimulus);
+        assignin('base', 'cues', shrinked_cues);
+        
         % Subtract ECG from EEG
         clean_eeg(n_run, :) = n_eeg(n_run, :) - n_ecg(n_run, :);
         
@@ -206,22 +205,22 @@ try
         assignin('base', 'clean_eeg', clean_eeg);
      
         % Average the signals
-        for i = 1:nb_trials * length(drinks)
-            average_eeg(stimulus(n_run, i), :, n_run) = ...
-                average_eeg(stimulus(n_run, i), :, n_run) ...
-                + eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
-            average_n_eeg(stimulus(n_run, i), :, n_run) = ...
-                average_n_eeg(stimulus(n_run, i), :, n_run) ...
-                + n_eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
-            average_clean_eeg(stimulus(n_run, i), :, n_run) = ...
-                average_clean_eeg(stimulus(n_run, i), :, n_run) ...
-                + clean_eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
+        for i = 1:(nb_trials-1) * length(drinks)
+            average_eeg(shrinked_stimulus(n_run, i), :, n_run) = ...
+                average_eeg(shrinked_stimulus(n_run, i), :, n_run) ...
+                + eeg(n_run, shrinked_cues(n_run, i):shrinked_cues(n_run, i)+trial_window_size-1);
+            average_n_eeg(shrinked_stimulus(n_run, i), :, n_run) = ...
+                average_n_eeg(shrinked_stimulus(n_run, i), :, n_run) ...
+                + n_eeg(n_run, shrinked_cues(n_run, i):shrinked_cues(n_run, i)+trial_window_size-1);
+            average_clean_eeg(shrinked_stimulus(n_run, i), :, n_run) = ...
+                average_clean_eeg(shrinked_stimulus(n_run, i), :, n_run) ...
+                + clean_eeg(n_run, shrinked_cues(n_run, i):shrinked_cues(n_run, i)+trial_window_size-1);
         end
         
         for i = length(drinks)
-            average_eeg(i, :, n_run) = average_eeg(i, :, n_run) / nb_trials;
-            average_n_eeg(i, :, n_run) = average_n_eeg(i, :, n_run) / nb_trials;
-            average_clean_eeg(i, :, n_run) = average_clean_eeg(i, :, n_run) / nb_trials;
+            average_eeg(i, :, n_run) = average_eeg(i, :, n_run) / (nb_trials-1);
+            average_n_eeg(i, :, n_run) = average_n_eeg(i, :, n_run) / (nb_trials-1);
+            average_clean_eeg(i, :, n_run) = average_clean_eeg(i, :, n_run) / (nb_trials-1);
         end
         
         assignin('base', 'average_eeg', average_eeg);
@@ -230,12 +229,10 @@ try
         
         % Process results
         [results(n_run), wavelets(:, :, n_run)] = processdata(clean_eeg(n_run, :), ...
-            stimulus(n_run, :), ...
-            video_cues(n_run, :), ...
-            nb_trials, sample_rate, ...
+            shrinked_stimulus(n_run, :), ...
+            shrinked_cues(n_run, :), ...
+            nb_trials-1, sample_rate, ...
             trial_window_size, drinks, 'db4');
-        
-        fprintf('Result is: %s\n', drinks{results(n_run)});
 
     end
     assignin('base', 'wavelets', wavelets);    
