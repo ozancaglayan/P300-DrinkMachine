@@ -2,15 +2,15 @@
 %
 % Authors:
 %   R.Burak Arslan
-%   Murat Yýlmaz
-%   Ozan Çaðlayan
+%   Murat Yilmaz
+%   Ozan Caglayan
+%
 
 function P300Drink()
-
 try
     % Initialize PsychSound for low-latency sound playback
     InitializePsychSound(1);
-    PsychPortAudio('Verbosity', 1);
+    PsychPortAudio('Verbosity', 0);
     
     GetSecs;
 
@@ -39,7 +39,7 @@ try
     nb_runs = 1;
     
     % Number of trials for each repetition
-    nb_trials = 40;
+    nb_trials = 1;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -114,9 +114,9 @@ try
     
     % Load images and create PTB textures
     for i = 1:length(drinks)
-        textures(i) = Screen('MakeTexture', window, imread(strcat('data/', drinks{i}, '.jpg')));
+        textures(i) = Screen('MakeTexture', window, imread(strcat('data/small/', drinks{i}, '.jpg')));
     end
-    textures(6) = Screen('MakeTexture', window, imread('data/drinksback.jpg'));
+    textures(6) = Screen('MakeTexture', window, imread('data/small/drinksback.jpg'));
     
     % Preload textures if possible
     Screen('PreloadTextures', window, textures);
@@ -187,7 +187,6 @@ try
         
         % In the loop above, we should have read stim_count * trial_window_size
         % sample for each channel.
-        
         fprintf(1, 'So far read: %d\n', offset - 1);
         
         % Fetch the remaining samples and stop acquisition
