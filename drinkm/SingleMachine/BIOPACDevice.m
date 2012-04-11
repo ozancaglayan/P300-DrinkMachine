@@ -67,6 +67,7 @@ classdef BIOPACDevice < handle
             loadlibrary(strcat(obj.lib_path, 'mpdev.dll'), @mpdevproto);
             
             % Init the device
+            obj.disconnect();
             obj.connect();
             obj.loadXMLPresetFile();
             obj.configureChannelsByPresetID();
@@ -75,7 +76,7 @@ classdef BIOPACDevice < handle
             
             % Read once to clean gain fluctuations
             obj.startAcquisition();
-            obj.readAndStopAcquisition(obj.sample_rate * obj.nb_channels);
+            obj.readAndStopAcquisition(obj.sample_rate);
         end
         
         function delete(obj)
@@ -132,6 +133,19 @@ classdef BIOPACDevice < handle
             retval = calllib(obj.lib_handle, 'stopAcquisition');
         end
         
+        function [total_read, buff] = readOneShot(obj, samples_to_fetch)
+            % How many data is read?
+            total_read = 0;
+            
+            % Temporary buffer
+            buff(1:samples_to_fetch) = double(0);
+            
+            % Read the requested samples
+            [~, buff, total_read] = calllib(obj.lib_handle, ...
+                    'receiveMPData', buff, ...
+                    samples_to_fetch, total_read);
+        end
+        
         function buff = readAndStopAcquisition(obj, samples_to_fetch)
             total_read = 0;
             
@@ -139,20 +153,20 @@ classdef BIOPACDevice < handle
             buff = zeros(obj.nb_channels, samples_to_fetch);
             
             % Collect 1 second worth of data points per iteration
-            to_read = obj.sample_rate * obj.nb_channels * 5;
+            to_read = obj.sample_rate * obj.nb_channels;
             
-            % Number of remaining samples to read
-            remaining = samples_to_fetch * obj.nb_channels;
+            % Multiply the number of samples by the number of channels
+            samples_to_fetch = samples_to_fetch * obj.nb_channels;
             
             % Initialize the correct amount of data
             temp_buffer(1:to_read) = double(0);
             offset = 1;
             
-            while(remaining > 0)
-                if to_read > remaining
-                    to_read = remaining;
+            while(samples_to_fetch > 0)
+                if to_read > samples_to_fetch
+                    to_read = samples_to_fetch;
                 end
-                
+
                 [retval, temp_buffer, total_read] = calllib(obj.lib_handle, ...
                     'receiveMPData', temp_buffer, to_read, total_read);
                 
@@ -171,7 +185,7 @@ classdef BIOPACDevice < handle
                 
                 % Compute new values
                 offset = offset + total_read/obj.nb_channels;
-                remaining = remaining - total_read;
+                samples_to_fetch = samples_to_fetch - total_read;
             end
 
             % Stop acquisition

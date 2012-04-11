@@ -1,4 +1,10 @@
-% Entry point for the P300 Drink Experiment
+% P300 Drink Experiment using PTB and BIOPAC MP-35 USB Data Acquisition Box
+%
+% Authors:
+%   R.Burak Arslan
+%   Murat Yýlmaz
+%   Ozan Çaðlayan
+
 function P300Drink()
 
 try
@@ -30,10 +36,10 @@ try
                               frequency, nr_channels, [], suggestedlatency);
     
     % Number of repetitions (i.e. How much experiments are we going to do?)
-    nb_runs = 3;
+    nb_runs = 1;
     
     % Number of trials for each repetition
-    nb_trials = 10;
+    nb_trials = 40;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -46,13 +52,14 @@ try
 
     % Create MP35 object
     channels = {'a22', 'a16'};
+    nb_channels = length(channels);
     mp35 = BIOPACDevice('C:\BHAPI\', 'mp35', 'usb', sample_rate, channels);
     
     % Single trial window length (160 by default)
     trial_window_size = (noflash_time + flash_time) * sample_rate;
     
     % Add 1 second worth of padding for now
-    trial_samples = (trial_window_size * nb_trials * length(drinks)) + (sample_rate * length(channels));
+    trial_samples = (trial_window_size * nb_trials * length(drinks)) + (sample_rate);
     assignin('base', 'trial_samples', trial_samples);
     
     % For storing the results
@@ -61,30 +68,33 @@ try
     % Pre-allocate stimulus data (5 = len(drinks))
     stimulus = zeros(nb_runs, nb_trials * length(drinks));
     
-    % Pre-allocate video_cues for delays
+    % Pre-allocate video_cues for stimulus onset times
+    % These are sample numbers
     video_cues = zeros(nb_runs, nb_trials * length(drinks));
     audio_cues = zeros(nb_runs, nb_trials * length(drinks));
+    
+    % These are pure timestamps
     ts_video_cues = zeros(nb_runs, nb_trials * length(drinks));
     ts_audio_cues = zeros(nb_runs, nb_trials * length(drinks));
     
-    % EEG data
+    % EEG/ECG/MIC channels
     eeg = zeros(nb_runs, trial_samples);
     ecg = zeros(nb_runs, trial_samples);
     mic = zeros(nb_runs, trial_samples);
     
-    % Normalized ones
+    % Normalized conterparts
     n_eeg = zeros(nb_runs, trial_samples);
     n_ecg = zeros(nb_runs, trial_samples);
     
-    % Clean EEG
+    % Cleaned EEG
     clean_eeg = zeros(nb_runs, trial_samples);
 
-    % Averaged ones
+    % Averaged counterparts
     average_eeg = zeros(length(drinks), trial_window_size, nb_runs);
     average_n_eeg = zeros(length(drinks), trial_window_size, nb_runs);
     average_clean_eeg = zeros(length(drinks), trial_window_size, nb_runs);
     
-    % Processed EEG's
+    % Wavelet processed EEG's
     wavelets = zeros(length(drinks), trial_window_size, nb_runs);
 
     % Open window
@@ -110,10 +120,7 @@ try
     
     % Preload textures if possible
     Screen('PreloadTextures', window, textures);
-    
-    % This is for disabling keyboard presses
-    %ListenChar(2);
-    
+
     % Pre generate random stimulus order
     for n_run = 1:nb_runs
         for n_trial = 1:nb_trials
@@ -127,11 +134,16 @@ try
     end
     
     assignin('base', 'stimulus', stimulus);
-    
-    %sch = findResource();
 
-    % Start the experiment. Outer loop is for each repetition.
-    for n_run = 1:nb_runs       
+    % Start the experiment. Outer loop is for each repetition/run
+    for n_run = 1:nb_runs
+        % How much doubles in total (for all channels) should we read?
+        n_doubles = trial_window_size * nb_channels;
+        
+        % Create a temporary buffer for in-loop acquisition
+        buff(1: n_doubles * nb_trials * length(drinks)) = 0;
+        offset = 1;
+
         % Prepare the subject first
         Screen('DrawTexture', window, textures(6));
         Screen('Flip', window);
@@ -143,9 +155,7 @@ try
         % Get the start_time in secs
         last_onset = GetSecs();
         initial_start = last_onset;
-        
-        %j = batch(sch, @getBiopacData, 1, {2, 200, trial_samples});
-        
+
         % stim_count counts from 1 to 25 if length(drinks) == 5
         for stim_count = 1:nb_trials * length(drinks)
             target_time = last_onset + noflash_time - slack;
@@ -158,33 +168,44 @@ try
             
             % Fill audio buffer
             PsychPortAudio('FillBuffer', pahandle, sounds(:, :, stimuli));
-            ts_audio_cues(n_run, stim_count) = PsychPortAudio('Start', pahandle, [], target_time, 1);
+            ts_audio_cues(n_run, stim_count) = PsychPortAudio('Start', ...
+                                                pahandle, [], target_time, 1);
 
             % Flip and save stimulus onset time into video_cues
             ts_video_cues(n_run, stim_count) = Screen('Flip', window, target_time);
             
+            % Read n_doubles sample
+            [total_read, t_buff] = mp35.readOneShot(n_doubles);
+            buff(offset:offset + total_read - 1) = t_buff;
+            offset = offset + total_read;
+            
             % Revert back to the background texture and wait noflash_time ms.
             Screen('DrawTexture', window, textures(6));
-            last_onset = Screen('Flip', window, ts_video_cues(n_run, stim_count) + flash_time - slack);
+            last_onset = Screen('Flip', window, ...
+                ts_video_cues(n_run, stim_count) + flash_time - slack);
         end
         
-        % Stop acquisition
-%         wait(j);
-%         r = getAllOutputArguments(j);
-%         buff = r{1};
-%         destroy(j);
-        buff = mp35.readAndStopAcquisition(trial_samples);
-        assignin('base', 'buff', buff);
+        % In the loop above, we should have read stim_count * trial_window_size
+        % sample for each channel.
         
-        eeg(n_run, :) = buff(1, :);
-        ecg(n_run, :) = buff(2, :);
-        %mic(n_run, :) = buff(3,:);
+        fprintf(1, 'So far read: %d\n', offset - 1);
+        
+        % Fetch the remaining samples and stop acquisition
+        rem_buff = mp35.readAndStopAcquisition(trial_samples - ...
+            (offset - 1)/nb_channels);
+        
+        % Place/concat all data into relevant arrays
+        for n_ch = 1:nb_channels
+            eeg(n_run, :) = [buff(1:nb_channels:end) rem_buff(n_ch, :)];
+            ecg(n_run, :) = [buff(2:nb_channels:end) rem_buff(n_ch, :)];
+        end
+        %assignin('base', 'buff', buff);
         
         assignin('base', 'eeg', eeg);
         assignin('base', 'ecg', ecg);
         assignin('base', 'mic', mic);
         
-        % Normalize cues
+        % Normalize cues to sample numbers
         video_cues(n_run, :) = int32(ceil((ts_video_cues(n_run, :) - initial_start) * sample_rate));
         audio_cues(n_run, :) = int32(ceil((ts_audio_cues(n_run, :) - initial_start) * sample_rate));
         
@@ -195,6 +216,8 @@ try
         
         % Normalize signals between (-1, 1), use maximum value
         % from 1000:end as the beginnings of the records are noisy and fluctuating.
+        % FIXME: We can remove the 1000:end workaround as the signal is now
+        % clean
         n_eeg(n_run, :) = eeg(n_run, :)./max(eeg(n_run, 1000:end));
         n_ecg(n_run, :) = ecg(n_run, :)./max(ecg(n_run, 1000:end));
         
@@ -248,18 +271,11 @@ try
     PsychPortAudio('Close', pahandle);
        
 catch err
-    if strcmp(err.identifier, 'P300Drink:ExperimentInterrupted')
-        fprintf('Interrupted: %s', err.msg);
-    end
-    
     Priority(0);
-    mp35.disconnect();
-    
     Screen('CloseAll');
-    
+    mp35.disconnect();
     PsychPortAudio('Stop', pahandle);
     PsychPortAudio('Close', pahandle);
-
     rethrow(err);
 
 % End of try-catch block
@@ -267,13 +283,3 @@ end
 
 % End of function
 end
-
-            
-% check for key-press to cleanly interrupt the experiment
-%                 [keyPressed, ~, keyCode, ~] = KbCheck;
-%
-%                 if keyPressed && keyCode(KbName('ESCAPE'))
-%                     me = MException('p300drink:experimentinterrupted', ...
-%                         'user interrupted the experiment');
-%                     throw(me);
-%                 end
