@@ -39,7 +39,7 @@ try
     nb_runs = 1;
     
     % Number of trials for each repetition
-    nb_trials = 1;
+    nb_trials = 10;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -49,6 +49,12 @@ try
     
     % Steady state time in s (i.e. Background texture is shown)
     noflash_time = 0.500;
+    
+    assignin('base', 'nb_runs', nb_runs);
+    assignin('base', 'nb_trials', nb_trials);
+    assignin('base', 'sample_rate', sample_rate);
+    assignin('base', 'flash_time', flash_time);
+    assignin('base', 'noflash_time', noflash_time);
 
     % Create MP35 object
     channels = {'a22', 'a16'};
@@ -111,6 +117,14 @@ try
     
     % Pre-allocate textures
     textures = zeros(length(drinks) + 1, 1);
+    textures2= zeros(length(drinks), 2);
+    
+    rects = [0 0 200 200; 200 200 400 400; 400 400 600 600; 600 600 800 800; 800 800 1000 1000];
+    
+    for i = 1:length(drinks)
+        textures2(i, 1) = Screen('MakeTexture', window, imread(strcat('data/per_drink/', drinks{i}, '_off.jpg')));
+        textures2(i, 2) = Screen('MakeTexture', window, imread(strcat('data/per_drink/', drinks{i}, '_on.jpg')));
+    end
     
     % Load images and create PTB textures
     for i = 1:length(drinks)
@@ -120,6 +134,7 @@ try
     
     % Preload textures if possible
     Screen('PreloadTextures', window, textures);
+    Screen('PreloadTextures', window, textures2);
 
     % Pre generate random stimulus order
     for n_run = 1:nb_runs
@@ -146,7 +161,8 @@ try
 
         % Prepare the subject first
         Screen('DrawTexture', window, textures(6));
-        Screen('Flip', window);
+        %Screen('DrawTextures', window, textures2(:, 1), [], rects);
+        Screen('Flip', window, [], 1);
         WaitSecs(1.0);
         
         % Start acquisition
@@ -164,6 +180,7 @@ try
             stimuli = stimulus(n_run, stim_count);
             
             % Draw the new texture
+            %Screen('DrawTexture', window, textures2(stimuli, 2), [], rects(stimuli, :));
             Screen('DrawTexture', window, textures(stimuli));
             
             % Fill audio buffer
@@ -181,8 +198,9 @@ try
             
             % Revert back to the background texture and wait noflash_time ms.
             Screen('DrawTexture', window, textures(6));
+            %Screen('DrawTextures', window, textures2(:, 1), [], rects);
             last_onset = Screen('Flip', window, ...
-                ts_video_cues(n_run, stim_count) + flash_time - slack);
+                ts_video_cues(n_run, stim_count) + flash_time - slack, 1);
         end
         
         % In the loop above, we should have read stim_count * trial_window_size
@@ -213,12 +231,9 @@ try
         assignin('base', 'ts_video_cues', ts_video_cues);
         assignin('base', 'ts_audio_cues', ts_audio_cues);
         
-        % Normalize signals between (-1, 1), use maximum value
-        % from 1000:end as the beginnings of the records are noisy and fluctuating.
-        % FIXME: We can remove the 1000:end workaround as the signal is now
-        % clean
-        n_eeg(n_run, :) = eeg(n_run, :)./max(eeg(n_run, 1000:end));
-        n_ecg(n_run, :) = ecg(n_run, :)./max(ecg(n_run, 1000:end));
+        % Normalize signals between (-1, 1)
+        n_eeg(n_run, :) = eeg(n_run, :)./max(eeg(n_run, :));
+        n_ecg(n_run, :) = ecg(n_run, :)./max(ecg(n_run, :));
         
         % Subtract ECG from EEG
         clean_eeg(n_run, :) = n_eeg(n_run, :) - n_ecg(n_run, :);
@@ -231,16 +246,16 @@ try
         for i = 1:nb_trials * length(drinks)
             average_eeg(stimulus(n_run, i), :, n_run) = ...
                 average_eeg(stimulus(n_run, i), :, n_run) ...
-                + eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
+                + eeg(n_run, audio_cues(n_run, i):audio_cues(n_run, i)+trial_window_size-1);
             average_n_eeg(stimulus(n_run, i), :, n_run) = ...
                 average_n_eeg(stimulus(n_run, i), :, n_run) ...
-                + n_eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
+                + n_eeg(n_run, audio_cues(n_run, i):audio_cues(n_run, i)+trial_window_size-1);
             average_clean_eeg(stimulus(n_run, i), :, n_run) = ...
                 average_clean_eeg(stimulus(n_run, i), :, n_run) ...
-                + clean_eeg(n_run, video_cues(n_run, i):video_cues(n_run, i)+trial_window_size-1);
+                + clean_eeg(n_run, audio_cues(n_run, i):audio_cues(n_run, i)+trial_window_size-1);
         end
         
-        for i = length(drinks)
+        for i = 1:length(drinks)
             average_eeg(i, :, n_run) = average_eeg(i, :, n_run) / nb_trials;
             average_n_eeg(i, :, n_run) = average_n_eeg(i, :, n_run) / nb_trials;
             average_clean_eeg(i, :, n_run) = average_clean_eeg(i, :, n_run) / nb_trials;
@@ -251,9 +266,9 @@ try
         assignin('base', 'average_clean_eeg', average_clean_eeg);
         
         % Process results
-        [results(n_run), wavelets(:, :, n_run)] = processdata(clean_eeg(n_run, :), ...
+        [results(n_run), wavelets(:, :, n_run)] = processdata(n_eeg(n_run, :), ...
             stimulus(n_run, :), ...
-            video_cues(n_run, :), ...
+            audio_cues(n_run, :), ...
             nb_trials, sample_rate, ...
             trial_window_size, drinks, 'db4');
         

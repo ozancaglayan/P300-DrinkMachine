@@ -10,6 +10,7 @@ eegw  = D8 + D6 + D7;
 
 % EEG zero mean
 eegwzm = eegw - mean(eegw);
+assignin('base', 'eegwzm', eegwzm);
 
 % P300 interval: 0.3sec - 0.5sec
 p300_start = 0.3 * sample_rate;
