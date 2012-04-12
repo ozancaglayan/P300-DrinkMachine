@@ -39,7 +39,7 @@ try
     nb_runs = 1;
     
     % Number of trials for each repetition
-    nb_trials = 10;
+    nb_trials = 1;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -118,8 +118,7 @@ try
     % Pre-allocate textures
     textures = zeros(length(drinks) + 1, 1);
     textures2= zeros(length(drinks), 2);
-    
-    rects = [0 0 200 200; 200 200 400 400; 400 400 600 600; 600 600 800 800; 800 800 1000 1000];
+    textures_check = zeros(length(drinks), 1);
     
     for i = 1:length(drinks)
         textures2(i, 1) = Screen('MakeTexture', window, imread(strcat('data/per_drink/', drinks{i}, '_off.jpg')));
@@ -129,12 +128,13 @@ try
     % Load images and create PTB textures
     for i = 1:length(drinks)
         textures(i) = Screen('MakeTexture', window, imread(strcat('data/small/', drinks{i}, '.jpg')));
+        textures_check(i) = Screen('MakeTexture', window, imread(strcat('data/small/', drinks{i}, '_check.jpg')));
     end
     textures(6) = Screen('MakeTexture', window, imread('data/small/drinksback.jpg'));
     
     % Preload textures if possible
     Screen('PreloadTextures', window, textures);
-    Screen('PreloadTextures', window, textures2);
+    Screen('PreloadTextures', window, textures_check);
 
     % Pre generate random stimulus order
     for n_run = 1:nb_runs
@@ -204,9 +204,7 @@ try
         end
         
         % In the loop above, we should have read stim_count * trial_window_size
-        % sample for each channel.
-        fprintf(1, 'So far read: %d\n', offset - 1);
-        
+        % sample for each channel.      
         % Fetch the remaining samples and stop acquisition
         rem_buff = mp35.readAndStopAcquisition(trial_samples - ...
             (offset - 1)/nb_channels);
@@ -272,7 +270,9 @@ try
             nb_trials, sample_rate, ...
             trial_window_size, drinks, 'db4');
         
-        fprintf('Result is: %s\n', drinks{results(n_run)});
+        Screen('DrawTexture', window, textures_check(results(n_run)));
+        Screen('Flip', window);
+        KbWait;
 
     end
     assignin('base', 'wavelets', wavelets);    
