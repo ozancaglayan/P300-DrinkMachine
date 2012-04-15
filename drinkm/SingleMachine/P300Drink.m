@@ -16,6 +16,7 @@ try
 
     % Store drink names
     drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
+
     assignin('base', 'drinks', drinks);
     
     % Define paradigm's language
@@ -215,7 +216,6 @@ try
             eeg(n_run, :) = [buff(1:nb_channels:end) rem_buff(n_ch, :)];
             ecg(n_run, :) = [buff(2:nb_channels:end) rem_buff(n_ch, :)];
         end
-        %assignin('base', 'buff', buff);
         
         assignin('base', 'eeg', eeg);
         assignin('base', 'ecg', ecg);
