@@ -18,14 +18,24 @@ try
     drinks = {'Water', 'Coffee', 'Tea', 'Soda', 'Beer'};
     assignin('base', 'drinks', drinks);
     
+    % Define paradigm's language
+    language = 'tr';
+    
     % Load audio data, each stimulus is 0.5 seconds long
     frequency = 48000;
     nr_channels = 2;
     sounds = zeros(nr_channels, frequency / 2, length(drinks));
     for i = 1:length(drinks)
-        [tmp, ~, ~] = wavread(strcat('data\', drinks{i}, '.wav'));
-        sounds(1, :, i) = interp(tmp, 3);
-        sounds(2, :, i) = interp(tmp, 3);
+        [tmp, fs, ~] = wavread(strcat('sounds\', language, '\', drinks{i}, '.wav'));
+        if fs ~= frequency
+            % English, interpolate to 48000 Hz
+            sounds(1, :, i) = interp(tmp, frequency/fs);
+            sounds(2, :, i) = interp(tmp, frequency/fs);
+        else
+            % Turkish
+            sounds(1, :, i) = tmp(:,1);
+            sounds(2, :, i) = tmp(:,2);
+        end
     end
     assignin('base', 'sounds', sounds);
     
@@ -117,20 +127,14 @@ try
     
     % Pre-allocate textures
     textures = zeros(length(drinks) + 1, 1);
-    textures2= zeros(length(drinks), 2);
     textures_check = zeros(length(drinks), 1);
-    
-    for i = 1:length(drinks)
-        textures2(i, 1) = Screen('MakeTexture', window, imread(strcat('data/per_drink/', drinks{i}, '_off.jpg')));
-        textures2(i, 2) = Screen('MakeTexture', window, imread(strcat('data/per_drink/', drinks{i}, '_on.jpg')));
-    end
     
     % Load images and create PTB textures
     for i = 1:length(drinks)
-        textures(i) = Screen('MakeTexture', window, imread(strcat('data/small/', drinks{i}, '.jpg')));
-        textures_check(i) = Screen('MakeTexture', window, imread(strcat('data/small/', drinks{i}, '_check.jpg')));
+        textures(i) = Screen('MakeTexture', window, imread(strcat('pictures/',language, '/', drinks{i}, '.jpg')));
+        textures_check(i) = Screen('MakeTexture', window, imread(strcat('pictures/',language, '/', drinks{i}, '_check.jpg')));
     end
-    textures(6) = Screen('MakeTexture', window, imread('data/small/drinksback.jpg'));
+    textures(6) = Screen('MakeTexture', window, imread(strcat('pictures/',language, '/', 'drinksback.jpg')));
     
     % Preload textures if possible
     Screen('PreloadTextures', window, textures);
@@ -161,7 +165,6 @@ try
 
         % Prepare the subject first
         Screen('DrawTexture', window, textures(6));
-        %Screen('DrawTextures', window, textures2(:, 1), [], rects);
         Screen('Flip', window, [], 1);
         WaitSecs(1.0);
         
@@ -180,7 +183,6 @@ try
             stimuli = stimulus(n_run, stim_count);
             
             % Draw the new texture
-            %Screen('DrawTexture', window, textures2(stimuli, 2), [], rects(stimuli, :));
             Screen('DrawTexture', window, textures(stimuli));
             
             % Fill audio buffer
@@ -198,7 +200,6 @@ try
             
             % Revert back to the background texture and wait noflash_time ms.
             Screen('DrawTexture', window, textures(6));
-            %Screen('DrawTextures', window, textures2(:, 1), [], rects);
             last_onset = Screen('Flip', window, ...
                 ts_video_cues(n_run, stim_count) + flash_time - slack, 1);
         end
@@ -286,10 +287,16 @@ try
        
 catch err
     Priority(0);
-    Screen('CloseAll');
-    mp35.disconnect();
-    PsychPortAudio('Stop', pahandle);
-    PsychPortAudio('Close', pahandle);
+    if exist('window', 'var')
+        Screen('CloseAll');
+    end
+    if exist('mp35', 'var')
+        mp35.disconnect();
+    end
+    if exist('pahandle', 'var')
+        PsychPortAudio('Stop', pahandle);
+        PsychPortAudio('Close', pahandle);
+    end
     rethrow(err);
 
 % End of try-catch block
