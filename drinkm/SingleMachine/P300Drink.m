@@ -47,10 +47,10 @@ try
                               frequency, nr_channels, [], suggestedlatency);
     
     % Number of repetitions (i.e. How much experiments are we going to do?)
-    nb_runs = 1;
+    nb_runs = 2;
     
     % Number of trials for each repetition
-    nb_trials = 1;
+    nb_trials = 8;
     
     % Sample rate in Hz to pass to the underlying acquisiton device
     sample_rate = 200;
@@ -68,7 +68,7 @@ try
     assignin('base', 'noflash_time', noflash_time);
 
     % Create MP35 object
-    channels = {'a22', 'a16'};
+    channels = {'a22', 'a22'};
     nb_channels = length(channels);
     mp35 = BIOPACDevice('C:\BHAPI\', 'mp35', 'usb', sample_rate, channels);
     
